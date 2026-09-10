@@ -1,0 +1,4 @@
+{% extends 'dashboard/base.html' %}{% block content %}
+<div class="page-title"><div><h1>Notifications</h1><p>Updates on your submitted reports.</p></div><form method="post">{% csrf_token %}<button class="outline">Mark all as read</button></form></div>
+<div class="list">{% for n in notifications %}<a class="notice-row {% if not n.is_read %}unread{% endif %}" href="{% url 'notification_open' n.pk %}"><div><b>{{ n.title }}</b><p>{{ n.message }}</p></div><small>{{ n.created_at|date:'M d, Y • g:i A' }}</small></a>{% empty %}<p class="empty">No notifications yet.</p>{% endfor %}</div>
+{% endblock %}

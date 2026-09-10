@@ -1,0 +1,40 @@
+{% extends 'dashboard/base.html' %}{% block content %}
+<div class="page-title"><div><h1>Extension Programs / Projects / Activities</h1><p>These records directly feed the dashboard status, assessment, personnel, and training summaries.</p></div><button type="button" class="primary" data-modal="add-ppa">＋ Add PPA</button></div>
+<div class="card scroll"><table class="data wide"><tr><th>Program ID</th><th>Title</th><th>Type</th><th>Implementing Unit</th><th>Date Approved</th><th>Approved?</th><th>Board Confirmed?</th><th>Status</th><th>Trainees</th><th>Training Days</th><th>Weighted Trainees</th><th>Faculty M/F</th><th>Staff M/F</th><th>Students M/F</th><th>Internal</th><th>External</th><th>Remarks</th><th>Action</th></tr>{% for r in rows %}<tr><td>{{ r.program_id }}</td><td>{{ r.title }}</td><td>{{ r.get_type_display }}</td><td>{{ r.get_implementing_unit_display }}</td><td>{{ r.date_approved|date:'Y-m-d'|default:'—' }}</td><td>{% if r.approved %}Yes{% else %}No{% endif %}</td><td>{% if r.board_confirmed %}Yes{% else %}No{% endif %}</td><td>{{ r.get_status_display }}</td><td>{{ r.trainees }}</td><td>{{ r.training_length_days }}</td><td>{{ r.weighted_trainees }}</td><td>{{ r.faculty_male }} / {{ r.faculty_female }}</td><td>{{ r.staff_male }} / {{ r.staff_female }}</td><td>{{ r.student_male }} / {{ r.student_female }}</td><td>{% if r.internally_assessed %}Yes{% else %}No{% endif %}</td><td>{% if r.externally_assessed %}Yes{% else %}No{% endif %}</td><td>{{ r.remarks|default:'—' }}</td><td><a href="{% url 'ppa_edit' r.pk %}">Edit</a></td></tr>{% empty %}<tr><td colspan="18">No records yet.</td></tr>{% endfor %}</table></div>
+
+<div class="modal {% if form.errors %}open{% endif %}" id="add-ppa"><div class="modalbox wide-modal"><button class="x" data-close>×</button><h2>Add Extension Program / Project / Activity</h2><p class="modal-intro">Complete the record by section. Fields that affect one another are grouped together.</p><form method="post" class="smart-form" id="ppa-form">{% csrf_token %}
+  <fieldset><legend>Basic Information</legend><div class="smart-grid">
+    <label><span>{{ form.program_id.label }}</span>{{ form.program_id }}{% for e in form.program_id.errors %}<small class="fielderror">{{ e }}</small>{% endfor %}</label>
+    <label class="span-2"><span>{{ form.title.label }}</span>{{ form.title }}{% for e in form.title.errors %}<small class="fielderror">{{ e }}</small>{% endfor %}</label>
+    <label><span>{{ form.type.label }}</span>{{ form.type }}</label>
+    <label><span>{{ form.implementing_unit.label }}</span>{{ form.implementing_unit }}</label>
+    <label><span>{{ form.status.label }}</span>{{ form.status }}</label>
+  </div></fieldset>
+
+  <fieldset><legend>Approval and Board Confirmation</legend><p class="field-hint">Approval date is only enabled when the record is marked approved.</p><div class="smart-grid approval-grid">
+    <label class="check-card">{{ form.approved }}<span><b>Approved?</b><small>Check if this PPA has already been formally approved.</small></span></label>
+    <label id="approval-date-wrap"><span>Date Approved</span>{{ form.date_approved }}{% for e in form.date_approved.errors %}<small class="fielderror">{{ e }}</small>{% endfor %}</label>
+    <label class="check-card">{{ form.board_confirmed }}<span><b>Board Confirmed?</b><small>Check if the PPA has received board confirmation.</small></span></label>
+  </div></fieldset>
+
+  <fieldset><legend>Training Information</legend><div class="smart-grid">
+    <label><span>{{ form.trainees.label }}</span>{{ form.trainees }}</label>
+    <label><span>{{ form.training_length_days.label }}</span>{{ form.training_length_days }}</label>
+    <div class="computed-note span-2">Weighted Trainees = No. of Trainees × Training Length (days). The system computes this automatically.</div>
+  </div></fieldset>
+
+  <fieldset><legend>Personnel and Student Participation</legend><div class="smart-grid three-col">
+    <label><span>Faculty Male</span>{{ form.faculty_male }}</label><label><span>Faculty Female</span>{{ form.faculty_female }}</label>
+    <label><span>Staff Male</span>{{ form.staff_male }}</label><label><span>Staff Female</span>{{ form.staff_female }}</label>
+    <label><span>Student Male</span>{{ form.student_male }}</label><label><span>Student Female</span>{{ form.student_female }}</label>
+  </div></fieldset>
+
+  <fieldset><legend>Impact Assessment</legend><div class="check-grid">
+    <label class="check-card">{{ form.internally_assessed }}<span><b>Internally Impact Assessed?</b><small>Check if an internal impact assessment has been completed.</small></span></label>
+    <label class="check-card">{{ form.externally_assessed }}<span><b>Externally Impact Assessed?</b><small>Check if an external impact assessment has been completed.</small></span></label>
+  </div></fieldset>
+
+  <fieldset><legend>Remarks</legend><label class="full-field">{{ form.remarks }}</label></fieldset>
+  <footer class="smart-actions"><button type="button" class="secondary" data-close>Cancel</button><button class="primary">Save PPA</button></footer>
+</form></div></div>
+{% endblock %}

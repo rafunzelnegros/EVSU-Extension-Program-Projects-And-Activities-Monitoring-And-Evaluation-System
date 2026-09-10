@@ -1,0 +1,99 @@
+{% extends 'dashboard/base.html' %}{% load static dashboard_extras %}
+{% block hero %}
+<section class="hero">
+  <div class="hero-seal"><img class="hero-logo" src="{% static 'dashboard/img/extension-logo.png' %}" alt="EVSU Extension logo"></div>
+  <div class="hero-copy">
+    <small>UNIVERSITY EXTENSION PROGRAMS, PROJECTS, AND ACTIVITIES</small>
+    <h1>Monitoring Dashboard</h1>
+    <p>{% if end_user_view %}Overview for your assigned school/campus only.{% else %}System-wide overview of extension programs, projects, partnerships, assessments, and participation.{% endif %}</p>
+  </div>
+  <div class="hero-user">
+    <small>Signed in as</small>
+    <strong>{{ current_identity|default:user.username }}</strong>
+    {% if current_role == 'SCHOOL' %}<span>School Coordinator</span>{% elif current_role == 'CAMPUS' %}<span>Campus Head</span>{% elif current_role == 'ADMIN' %}<span>Extension Office</span>{% endif %}
+  </div>
+</section>
+{% endblock %}
+{% block content %}
+<div class="asof"><span>AS OF:</span><b>{% if latest_update %}{{ latest_update|date:'F j, Y • g:i A' }}{% else %}{% now 'F j, Y • g:i A' %}{% endif %}</b></div>
+
+<section class="dash-top">
+  <article class="card status-card">
+    <header class="cardhead"><div><h2>Programs and Projects by Status</h2><p>Summary across {% if end_user_view %}your assigned unit{% else %}all units{% endif %}.</p></div></header>
+    <table class="status">
+      <tr><th>TYPE</th><th>APPROVED</th><th>BOARD CONFIRMED</th><th>ON-GOING</th><th>INACTIVE</th><th>TERMINATED</th></tr>
+      <tr><th>Programs</th><td>{{ status_table.programs.approved }}</td><td>{{ status_table.programs.board }}</td><td>{{ status_table.programs.ongoing }}</td><td>{{ status_table.programs.inactive }}</td><td>{{ status_table.programs.terminated }}</td></tr>
+      <tr><th>Projects</th><td>{{ status_table.projects.approved }}</td><td>{{ status_table.projects.board }}</td><td>{{ status_table.projects.ongoing }}</td><td>{{ status_table.projects.inactive }}</td><td>{{ status_table.projects.terminated }}</td></tr>
+    </table>
+  </article>
+
+  <article class="card donut-card">
+    <h2>Extension Programs / Projects Summary</h2>
+    {% if chart_sum %}
+    <div class="donut-wrap">
+      <svg class="donut-svg" viewBox="0 0 120 120" role="img" aria-label="PPA summary chart">
+        <circle class="donut-track" cx="60" cy="60" r="44" pathLength="100"></circle>
+        {% for seg in chart_segments %}{% if seg.value %}
+        <circle class="donut-segment seg-{{ seg.key }}" cx="60" cy="60" r="44" pathLength="100"
+          stroke="{{ seg.color }}" stroke-dasharray="{{ seg.pct }} {{ seg.rest }}" stroke-dashoffset="-{{ seg.offset }}">
+          <title>{{ seg.label }}: {{ seg.value }}</title>
+        </circle>
+        {% endif %}{% endfor %}
+        <text x="60" y="57" text-anchor="middle" class="donut-total">{{ chart_sum }}</text>
+        <text x="60" y="68" text-anchor="middle" class="donut-label">summary count</text>
+      </svg>
+    </div>
+    {% else %}
+      <div class="donut-empty"><b>0</b><small>No records</small></div>
+    {% endif %}
+    <div class="legend">
+      {% for seg in chart_segments %}<span title="{{ seg.label }}: {{ seg.value }}"><i class="lg" style="background:{{ seg.color }}"></i>{{ seg.label }} {{ seg.value }}</span>{% endfor %}
+    </div>
+  </article>
+</section>
+
+<section class="two">
+  <article class="card"><h2>Assessment Overview</h2><div class="stats"><div><small>Internally Assessed</small><b>{{ counts.internal }}</b></div><div><small>Externally Assessed</small><b>{{ counts.external }}</b></div></div></article>
+  <article class="card"><h2>Board Confirmed</h2><div class="stats"><div><small>Confirmed MOA</small><b>{{ counts.moa }}</b></div><div><small>Confirmed MOU</small><b>{{ counts.mou }}</b></div></div><p class="card-note">MOA/MOU is recognized from the partnership remarks because the provided data-entry sheet has no separate agreement-type field.</p></article>
+</section>
+
+<section class="two visual-row">
+  <article class="card personnel-card">
+    <div class="visual-head"><h2>Personnel and Students Involved by Sex</h2><div class="chart-legend"><span><i class="male-key"></i>Male</span><span><i class="female-key"></i>Female</span></div></div>
+    <div class="paired-chart">
+      <div class="chart-gridlines"><i style="bottom:0%"></i><i style="bottom:25%"></i><i style="bottom:50%"></i><i style="bottom:75%"></i><i style="bottom:100%"></i></div>
+      <div class="paired-bars">
+        {% for item in personnel_chart %}
+        <div class="bar-group">
+          <div class="bar-pair">
+            <div class="vbar male-bar" style="height: {{ item.male_pct }}%;" data-tooltip="{{ item.label }} Male: {{ item.male }}"><span></span></div>
+            <div class="vbar female-bar" style="height: {{ item.female_pct }}%;" data-tooltip="{{ item.label }} Female: {{ item.female }}"><span></span></div>
+          </div>
+          <b>{{ item.label }}</b>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="y-axis">{% for tick in personnel_ticks %}<span style="bottom:{{ tick.pct }}%">{{ tick.label }}</span>{% endfor %}</div>
+    </div>
+  </article>
+
+  <article class="card partnership-card">
+    <h2>Active Partnerships</h2>
+    <div class="progress-list">
+      {% for item in partnership_chart %}
+      <div class="progress-item" data-tooltip="{{ item.label }}: {{ item.value }} active partnership{{ item.value|pluralize }}">
+        <div class="progress-meta"><span>{{ item.label }}</span><b>{{ item.value }}</b></div>
+        <div class="progress-track"><i style="width: {{ item.pct }}%;"></i></div>
+      </div>
+      {% endfor %}
+    </div>
+  </article>
+</section>
+
+<div class="taep-head"><div><h1>TAEP</h1><p>Technical Advisory Extension Program outcome indicators • Budget Year {{ year }}</p></div><button type="button" class="outline" data-modal="indicators">Choose indicators to show</button></div>
+<form method="get"><div id="indicators" class="modal"><div class="modalbox"><button type="button" class="x" data-close>×</button><h2>Choose indicators to show</h2><p>Select up to four indicators.</p><div class="checks">{% for i in all_indicators %}<label><input type="checkbox" name="indicator" value="{{ i.order }}" {% if i.order in chosen %}checked{% endif %}><i></i><b>{{ i.order|stringformat:'02d' }}</b><span>{{ i.name }}</span></label>{% endfor %}</div><footer><a href="{% url 'dashboard' %}" class="secondary">Reset to first four</a><button class="primary">Apply</button></footer></div></div></form>
+
+{% for t in taep_tables %}
+<article class="card taep-card"><h2>{{ t.indicator.order }}. {{ t.indicator.name }}</h2><div class="scroll"><table class="taepdash"><tr><th>Quarter</th><th>Target</th>{% for code,label in dashboard_units %}<th>{{ label }}</th>{% endfor %}<th>Total</th></tr>{% for r in t.quarters %}<tr><th>Q{{ r.q }}</th><td class="target">{{ r.target }}</td>{% for code,label in dashboard_units %}<td>{{ r.vals|get_item:code }}</td>{% endfor %}<td class="total">{{ r.total }}</td></tr>{% endfor %}</table></div></article>
+{% endfor %}
+{% endblock %}
