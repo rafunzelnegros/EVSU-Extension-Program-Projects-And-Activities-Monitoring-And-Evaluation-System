@@ -1,0 +1,70 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<form method="post" id="qmrForm">{% csrf_token %}
+  <div class="page-title"><div><p class="eyebrow">QUARTERLY MONITORING REPORT</p><h1>{% if obj %}Edit Report{% else %}Add Report{% endif %}</h1><p>Select an approved Project. Project Design data will load automatically; monitoring fields remain conditional to the selected status.</p></div></div>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>01</span><div><h2>Project &amp; Monitoring Period</h2><p>Start and End Dates are automatically taken from the saved Project Design.</p></div></div>
+    <label>Project
+      <select name="project" id="qmrProject" required>
+        <option value="">Select approved Project...</option>
+        {% for p in form.fields.project.queryset %}<option value="{{p.pk}}" {% if form.project.value|stringformat:'s' == p.pk|stringformat:'s' %}selected{% endif %}>{{p.title}} — {{p.unit.name}}</option>{% endfor %}
+      </select>
+      {% if form.project.errors %}<small class="error">{{form.project.errors|striptags}}</small>{% endif %}
+    </label>
+    <div class="formgrid two"><label>Project Start Date{{form.period_start}}{% if form.period_start.errors %}<small class="error">{{form.period_start.errors|striptags}}</small>{% endif %}</label><label>Project End Date{{form.period_end}}{% if form.period_end.errors %}<small class="error">{{form.period_end.errors|striptags}}</small>{% endif %}</label></div>
+    <div id="projectRuleNote" class="notice subtle-notice hidden"></div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>02</span><div><h2>Monitoring Details</h2><p>Information used in the official printable Quarterly Monitoring Report.</p></div></div>
+    <div class="formgrid three qmr-unit-grid">
+      <label>School{{form.school_name}}<small>Automatically derived when the Project belongs to an EVSU School.</small></label>
+      <label>Campus{{form.campus_name}}<small>Schools are automatically assigned to Main Campus.</small></label>
+      <label>Department{{form.department}}<small>Input the applicable Department.</small></label>
+    </div>
+    <div class="formgrid two">
+      <label>Date Conducted{{form.date_conducted}}</label>
+      <label>Location{{form.location}}</label>
+      <label>Source of Fund{{form.funding_source}}</label>
+      <label>Total Project Cost{{form.total_project_cost}}</label>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>03</span><div><h2>Project Status</h2><p>Status-specific fields only appear when they are relevant.</p></div></div>
+    <label>Project Status{{form.project_status}}{% if form.project_status.errors %}<small class="error">{{form.project_status.errors|striptags}}</small>{% endif %}</label>
+
+    <div id="ongoingFields" class="conditional-box hidden">
+      <div class="field-group-label">Current Phase</div>
+      <div class="phase-choice-grid">
+        {% for n,label in phases.items %}
+        <label class="phase-choice"><input type="radio" name="phase" value="{{n}}" {% if form.phase.value|stringformat:'s' == n|stringformat:'s' %}checked{% endif %}><span><b>Phase {{n}}</b><small>{{label}}</small></span></label>
+        {% endfor %}
+      </div>
+      {% if form.phase.errors %}<small class="error">{{form.phase.errors|striptags}}</small>{% endif %}
+    </div>
+
+    <div id="inactiveFields" class="conditional-box hidden"><label>Inactive Remarks{{form.inactive_remarks}}{% if form.inactive_remarks.errors %}<small class="error">{{form.inactive_remarks.errors|striptags}}</small>{% endif %}</label></div>
+
+    <div id="terminatedFields" class="conditional-box hidden">
+      <div id="terminationLocked" class="notice warning-note hidden">Termination is not yet available for this Project. It unlocks one year after the saved End Date while the Project remains incomplete.</div>
+      <label id="terminationDateField">Date of Termination{{form.date_of_termination}}{% if form.date_of_termination.errors %}<small class="error">{{form.date_of_termination.errors|striptags}}</small>{% endif %}</label>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>04</span><div><h2>Evaluation</h2><p>Narrative monitoring and evaluation findings.</p></div></div>
+    <label>Evaluation{{form.evaluation}}</label>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>05</span><div><h2>Printable Signatories</h2><p><b>Prepared by</b> automatically uses the logged-in user. The Extension Director is also generated from the Director account; only the remaining changing signatories require input.</p></div></div>
+    <div class="static-info-row"><span>Prepared by</span><strong>{{current_user_name}}</strong></div>
+    <div class="formgrid three"><label>Campus Director / Dean{{form.noted_dean_name}}</label><div class="static-form-value"><span>Extension Director</span><strong>{{extension_director_name}}</strong></div><label>VP for OPRDEXS{{form.approved_vp_name}}</label></div>
+  </section>
+
+  <footer class="sticky-actions form-sticky-actions"><a class="secondary" href="{% url 'qmr_list' %}">Cancel</a><button class="secondary" name="action" value="save">Save</button><button class="primary" name="action" value="save_print">Save &amp; Print</button>{% if obj %}<a class="secondary" target="_blank" href="{% url 'qmr_print' obj.pk %}">Print Preview</a>{% endif %}</footer>
+</form>
+<script id="qmrProjectMeta" type="application/json">{{project_meta_json|safe}}</script>
+{% endblock %}

@@ -1,0 +1,176 @@
+{% extends 'dashboard/base.html' %}
+{% load static %}
+{% block hero %}
+<section class="hero dashboard-hero reference-hero">
+  <div class="hero-inner">
+    <div class="hero-mark reference-mark"><img src="{% static 'dashboard/img/extension_mark.png' %}" alt="EVSU Extension mark"></div>
+    <div class="hero-copy">
+      <p class="hero-kicker">UNIVERSITY EXTENSION PROGRAMS, PROJECTS, AND ACTIVITIES</p>
+      <h1>Monitoring Dashboard</h1>
+      <p>
+        {% if current_role == 'COORDINATOR' %}Overview for your assigned school/campus only.
+        {% elif current_role == 'DIRECTOR' %}University-wide visual overview for executive monitoring and decision support.
+        {% elif current_role == 'ADMIN_STAFF' %}University-wide monitoring, QPAR, and decision-support overview.
+        {% else %}University-wide monitoring and evaluation overview across EVSU schools and campuses.{% endif %}
+      </p>
+    </div>
+    <div class="signed-card">
+      <small>SIGNED IN AS</small>
+      <strong>{{ current_user_name }}</strong>
+      <span>{{ current_role_label }}</span>
+    </div>
+  </div>
+</section>
+{% endblock %}
+
+{% block content %}
+<div class="reference-dashboard">
+  <div class="dashboard-period-row">
+    <div class="as-of-row">AS OF: <strong>{% now "F j, Y · g:i A" %}</strong></div>
+  </div>
+
+  <div class="overview-grid">
+    <section class="reference-card status-table-card">
+      <div class="reference-card-head">
+        <h2>Programs and Projects by Status</h2>
+        <p>Summary across {% if current_unit %}your assigned unit{% else %}all EVSU schools and campuses{% endif %}.</p>
+      </div>
+      <div class="table-scroll">
+        <table class="status-table">
+          <thead>
+            <tr><th>Type</th><th>Approved</th><th>Board Confirmed</th><th>On-going</th><th>Inactive</th><th>Terminated</th></tr>
+          </thead>
+          <tbody>
+            <tr><th>Programs</th><td>{{status_programs.approved}}</td><td>{{status_programs.board_confirmed}}</td><td>{{status_programs.ongoing}}</td><td>{{status_programs.inactive}}</td><td>{{status_programs.terminated}}</td></tr>
+            <tr><th>Projects</th><td>{{status_projects.approved}}</td><td>{{status_projects.board_confirmed}}</td><td>{{status_projects.ongoing}}</td><td>{{status_projects.inactive}}</td><td>{{status_projects.terminated}}</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="reference-card summary-card">
+      <h2>Extension Programs / Projects Summary</h2>
+      <div class="summary-donut {% if not summary_total %}is-empty{% endif %}" style="{% if summary_total %}background:{{summary_gradient}}{% endif %}">
+        <div class="donut-center"><strong>{{summary_total}}</strong><span>{% if summary_total %}total records{% else %}No records{% endif %}</span></div>
+      </div>
+      <div class="summary-legend">
+        <span><i class="dot approved"></i>Approved {{summary_counts.approved}}</span>
+        <span><i class="dot board"></i>Board Confirmed {{summary_counts.board_confirmed}}</span>
+        <span><i class="dot ongoing"></i>On-going {{summary_counts.ongoing}}</span>
+        <span><i class="dot terminated"></i>Terminated {{summary_counts.terminated}}</span>
+        <span><i class="dot inactive"></i>Inactive {{summary_counts.inactive}}</span>
+      </div>
+    </section>
+  </div>
+
+  <div class="mid-grid">
+    <section class="reference-card metric-panel">
+      <h2>Assessment Overview</h2>
+      <div class="metric-pair">
+        <article><span>Internally Assessed</span><strong>{{assessment_counts.internal}}</strong></article>
+        <article><span>Externally Assessed</span><strong>{{assessment_counts.external}}</strong></article>
+      </div>
+    </section>
+
+    <section class="reference-card metric-panel">
+      <h2>Board Confirmation &amp; Agreements</h2>
+      <div class="metric-pair">
+        <article><span>Board Confirmed</span><strong>{{board_counts.confirmed}}</strong></article>
+        <article><span>With MOA/MOU</span><strong>{{board_counts.moa_mou}}</strong></article>
+      </div>
+      <p class="panel-note">Values come directly from the approved Program/Project Design records.</p>
+    </section>
+  </div>
+
+  <section class="reference-card partnerships-panel">
+    <div class="reference-card-head compact-head">
+      <h2>Active Partnerships</h2>
+      <p>Partner agencies, industries, and communities recorded in Program/Project Designs.</p>
+    </div>
+    <div class="partnership-bars">
+      {% for row in partnerships %}
+      <div class="partnership-row">
+        <div class="partnership-label"><span>{{row.label}}</span><strong>{{row.count}}</strong></div>
+        <div class="partnership-track"><span style="width:{{row.percent}}%"></span></div>
+      </div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="taep-reference-section">
+    <div class="taep-title-row">
+      <div>
+        <h2>TAEP</h2>
+        <p>First four Technical Advisory Extension Program indicators · Q{{quarter}} {{year}}</p>
+      </div>
+      <div class="taep-actions">
+        <form method="get" class="period-picker compact-filter taep-filter">
+          <label>Budget Year<input type="number" name="year" value="{{year}}" min="2000" max="2100"></label>
+          <label>Quarter<select name="quarter">
+            <option value="1" {% if quarter == 1 %}selected{% endif %}>Q1</option>
+            <option value="2" {% if quarter == 2 %}selected{% endif %}>Q2</option>
+            <option value="3" {% if quarter == 3 %}selected{% endif %}>Q3</option>
+            <option value="4" {% if quarter == 4 %}selected{% endif %}>Q4</option>
+          </select></label>
+          <button class="secondary compact-btn">Apply</button>
+        </form>
+        {% if current_role == 'COORDINATOR' %}<a class="outline-action" href="{% url 'qpar_list' %}">Open QPAR Input</a>{% elif current_role == 'ME_HEAD' %}<a class="outline-action" href="{% url 'taep_report' %}">View TAEP Report</a>{% endif %}
+      </div>
+    </div>
+    <div class="taep-cards">
+      {% for ind,vals,total in taep %}
+      <article class="taep-reference-card">
+        <div class="taep-number">{{ind.order|stringformat:'02d'}}</div>
+        <div class="taep-copy">
+          <strong>{{ind.name}}</strong>
+          {% if current_role != 'COORDINATOR' %}
+          <div class="taep-unit-values">{% for u,v in vals %}<span>{{u.code}} <b>{{v}}</b></span>{% endfor %}</div>
+          {% endif %}
+        </div>
+        <div class="taep-total"><small>{% if current_role == 'COORDINATOR' %}Your Total{% else %}Total{% endif %}</small><strong>{{total}}</strong></div>
+      </article>
+      {% empty %}<div class="reference-card empty-state"><b>No TAEP indicators yet.</b><span>Run the seed command to create the extension indicators.</span></div>{% endfor %}
+    </div>
+  </section>
+
+  {% if current_role == 'DIRECTOR' or current_role == 'ADMIN_STAFF' %}
+  <section class="prediction-overview-grid">
+    <article class="reference-card prediction-chart-card">
+      <div class="reference-card-head compact-head">
+        <h2>Prediction &amp; Analytics Overview</h2>
+        <p>All schools and campuses · smooth cumulative project trends for {{prediction_year}}.</p>
+      </div><form method="get" class="prediction-year-form"><input type="number" name="prediction_year" value="{{prediction_year}}" min="2000" max="2100"><button class="ghost-btn">Update</button></form>
+      {% if forecast %}
+      <div class="forecast-line-chart-wrap">
+        <svg class="forecast-line-chart" viewBox="0 0 106 100" preserveAspectRatio="none" role="img" aria-label="Project forecast line chart">
+          <line x1="8" y1="90" x2="98" y2="90" class="chart-axis"></line>
+          <line x1="8" y1="66" x2="98" y2="66" class="chart-grid"></line>
+          <line x1="8" y1="42" x2="98" y2="42" class="chart-grid"></line>
+          <line x1="8" y1="18" x2="98" y2="18" class="chart-grid"></line>
+          {% for r in forecast %}<path class="forecast-line" d="{{r.chart_path}}" style="stroke:{{r.chart_color}}"></path>{% endfor %}
+        </svg>
+        <div class="chart-quarter-labels"><span>Q1</span><span>Q2</span><span>Q3</span><span>Q4</span></div>
+      </div>
+      <div class="forecast-legend">
+        {% for r in forecast %}<span><i style="background:{{r.chart_color}}"></i>{{r.unit.code}}</span>{% endfor %}
+      </div>
+      {% else %}<div class="empty-state"><b>No project history yet.</b><span>The forecast will appear after saved projects have Start Dates.</span></div>{% endif %}
+    </article>
+
+    <article class="reference-card prediction-outcome-card">
+      <p class="eyebrow">EXPECTED OUTCOME</p>
+      {% if prediction_top %}
+        <h2>{{prediction_top.unit.name}}</h2>
+        <p>currently has the strongest projected year-end project count based on the recorded quarterly trend.</p>
+        <div class="prediction-number"><strong>{{prediction_top.year_forecast}}</strong><span>projected projects by year-end</span></div>
+        <div class="prediction-small"><span>Current cumulative</span><b>{{prediction_top.actual}}</b></div>
+        <div class="prediction-small"><span>Next-quarter forecast</span><b>{{prediction_top.quarter_forecast}}</b></div>
+      {% else %}
+        <h2>No prediction yet</h2><p>Add approved projects with Start Dates to establish a trend.</p>
+      {% endif %}
+      <a class="primary full-action" href="{% url 'analytics' %}">Open Prediction &amp; Analysis</a>
+    </article>
+  </section>
+  {% endif %}
+</div>
+{% endblock %}

@@ -1,0 +1,29 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<form method="post" {% if read_only %}class="readonly-form"{% endif %}>{% csrf_token %}
+  {% if read_only %}<fieldset disabled>{% endif %}
+  <div class="page-title"><div><p class="eyebrow">QPAR INPUT</p><h1>{% if read_only %}View{% elif obj %}Edit{% else %}Add{% endif %} Quarterly Input</h1><p>{% if read_only %}This saved Coordinator submission is read-only to Admin Staff.{% else %}The first four SAVED indicators feed TAEP on the Dashboard for the same Year and Quarter.{% endif %}</p></div></div>
+  <section class="card form-section">
+    <div class="formgrid three">
+      {% if current_role == 'COORDINATOR' %}
+      <div class="static-form-value"><span>Implementing Unit</span><strong>{{auto_unit.name}}</strong><input type="hidden" name="unit" value="{{auto_unit.pk}}"></div>
+      {% else %}
+      <label>Unit<select name="unit" required>{% for u in units %}<option value="{{u.pk}}" {% if obj and obj.unit_id == u.pk %}selected{% endif %}>{{u.name}}</option>{% endfor %}</select></label>
+      {% endif %}
+      <label>Year<input type="number" name="year" value="{{default_year}}" min="2000" max="2100" required></label>
+      <label>Quarter<select name="quarter" required><option value="1" {% if default_quarter == 1 %}selected{% endif %}>Q1</option><option value="2" {% if default_quarter == 2 %}selected{% endif %}>Q2</option><option value="3" {% if default_quarter == 3 %}selected{% endif %}>Q3</option><option value="4" {% if default_quarter == 4 %}selected{% endif %}>Q4</option></select></label>
+    </div>
+    <div class="notice subtle-notice">Tip: the form now defaults to the current quarter, so a saved TAEP accomplishment will appear on the Dashboard without accidentally being stored under Q1.</div>
+  </section>
+
+  <section class="indicator-list qpar-indicators">
+  {% for ind,val in indicators %}
+    <article class="card indicator-input {% if ind.order <= 4 %}featured{% endif %}">
+      <header><span>{{ind.order|stringformat:'02d'}}</span><div><b>{{ind.name}}</b>{% if ind.order <= 4 %}<small>TAEP indicator — automatically reflected after final Save</small>{% endif %}</div></header>
+      <div class="formgrid three"><label>Target<input type="number" step="0.01" name="target_{{ind.pk}}" value="{{val.target|default_if_none:''}}"></label><label>Accomplishment<input type="number" step="0.01" name="accomplishment_{{ind.pk}}" value="{{val.accomplishment|default_if_none:''}}"></label><label>Remarks<input name="remarks_{{ind.pk}}" value="{{val.remarks|default:''}}"></label></div>
+    </article>
+  {% endfor %}
+  </section>
+  {% if read_only %}</fieldset><footer class="sticky-actions form-sticky-actions"><a class="secondary" href="{% url 'qpar_list' %}">Back</a></footer>{% else %}<footer class="sticky-actions form-sticky-actions"><a class="secondary" href="{% url 'qpar_list' %}">Cancel</a><button class="secondary" name="action" value="draft">Save Draft</button><button class="primary" name="action" value="save">Save</button></footer>{% endif %}
+</form>
+{% endblock %}

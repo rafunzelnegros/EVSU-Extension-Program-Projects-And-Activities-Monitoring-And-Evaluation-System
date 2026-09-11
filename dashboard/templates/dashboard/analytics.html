@@ -1,0 +1,27 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<div class="page-title"><div><p class="eyebrow">PREDICTION &amp; ANALYSIS</p><h1>Project Forecast</h1><p>Decision-support view comparing all EVSU schools and campuses in one quarterly trend.</p></div><form class="inline"><input type="number" name="year" value="{{year}}" min="2000" max="2100"><button class="secondary">Apply</button></form></div>
+
+{% if prediction_top %}<section class="prediction-detail-hero card"><div><p class="eyebrow">CURRENT TOP PROJECTION</p><h2>{{prediction_top.unit.name}}</h2><p>Based on the cumulative quarterly trend recorded for {{year}}, this unit currently has the highest projected year-end project count.</p></div><div class="big-projection"><strong>{{prediction_top.year_forecast}}</strong><span>projected projects</span></div></section>{% endif %}
+
+<section class="reference-card prediction-chart-card analytics-chart-card">
+  <div class="reference-card-head compact-head"><h2>All Units — Quarterly Trend</h2><p>Each curved line represents one School or Campus. Actual cumulative totals are used for observed quarters; future quarters are projected.</p></div>
+  {% if forecast %}
+  <div class="forecast-line-chart-wrap">
+    <svg class="forecast-line-chart" viewBox="0 0 106 100" preserveAspectRatio="none" role="img" aria-label="All units project forecast line chart">
+      <line x1="8" y1="90" x2="98" y2="90" class="chart-axis"></line>
+      <line x1="8" y1="66" x2="98" y2="66" class="chart-grid"></line>
+      <line x1="8" y1="42" x2="98" y2="42" class="chart-grid"></line>
+      <line x1="8" y1="18" x2="98" y2="18" class="chart-grid"></line>
+      {% for r in forecast %}<path class="forecast-line" d="{{r.chart_path}}" style="stroke:{{r.chart_color}}"></path>{% endfor %}
+    </svg>
+    <div class="chart-quarter-labels"><span>Q1</span><span>Q2</span><span>Q3</span><span>Q4</span></div>
+  </div>
+  <div class="forecast-legend">{% for r in forecast %}<span><i style="background:{{r.chart_color}}"></i>{{r.unit.code}}</span>{% endfor %}</div>
+  {% else %}<div class="empty-state"><b>No saved Project Start Date data yet.</b></div>{% endif %}
+</section>
+
+<section class="card method-card"><h2>How the current prediction works</h2><p>The system uses a <b>simple least-squares linear trend</b> on each unit's <b>cumulative number of SAVED Projects</b>, grouped by the Project's Start Date and quarter. Draft PPAs are excluded. For the current year, the calculation only uses quarters that have already started, so future zeroes do not artificially lower the trend. It then extends that trend to estimate the next quarter and the end of Q4.</p><div class="method-steps"><span>1. Count SAVED project starts per quarter</span><span>2. Convert those counts into cumulative totals</span><span>3. Fit an explainable linear trend to observed quarters</span><span>4. Extend the trend for the next quarter and year-end</span></div><p class="hint"><b>Important:</b> this is a planning forecast, not a guaranteed result or an AI performance score. With very little history, especially only one observed quarter, the estimate is less stable and should be interpreted cautiously.</p></section>
+
+<section class="card table-scroll"><table class="data roomy-table"><thead><tr><th>Rank</th><th>Unit</th><th>Current Cumulative</th><th>Q1–Q4 Starts</th><th>Next-quarter Forecast</th><th>Year-end Forecast</th></tr></thead><tbody>{% for r in forecast %}<tr><td><b>#{{forloop.counter}}</b></td><td><b>{{r.unit.name}}</b></td><td>{{r.actual}}</td><td>{{r.starts.0}} · {{r.starts.1}} · {{r.starts.2}} · {{r.starts.3}}</td><td>{{r.quarter_forecast}}</td><td><b>{{r.year_forecast}}</b></td></tr>{% empty %}<tr><td colspan="6" class="empty-cell">No saved Project Start Date data yet.</td></tr>{% endfor %}</tbody></table></section>
+{% endblock %}

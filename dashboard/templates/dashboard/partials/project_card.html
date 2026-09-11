@@ -1,0 +1,64 @@
+<div class="project-card organized-project" data-project>
+  <input type="hidden" name="project_index[]" value="{{idx}}">
+  <div class="project-head">
+    <div><span class="step">Project {{idx}}</span><h3>Project Design</h3><p>This Project will automatically belong to the Program being created.</p></div>
+    <button type="button" class="icon danger-text" data-remove>Remove Project</button>
+  </div>
+
+  <div class="approval-lines nested-approval">
+    <label class="horizontal-field"><span>Notice to Proceed No.</span><input name="project_{{idx}}_notice_to_proceed_no" placeholder="Input the Notice to Proceed number"></label>
+    <label class="horizontal-field"><span>Special Order No.</span><input name="project_{{idx}}_special_order_no" placeholder="Input the Special Order number"></label>
+  </div>
+
+  <label>A. Title<input name="project_{{idx}}_title" placeholder="Input project title"></label>
+
+  <div class="repeater-block compact-repeater">
+    <div class="repeater-heading"><label>B. Proponent/s</label><button type="button" class="mini-action" data-add-line="#project{{idx}}Proponents" data-line-name="project_{{idx}}_proponents[]" data-placeholder="Input proponent name">＋ Add Proponent</button></div>
+    <div id="project{{idx}}Proponents" class="line-repeater"><div class="line-input"><input name="project_{{idx}}_proponents[]" placeholder="Input proponent name"><button type="button" class="line-remove" data-remove-line>×</button></div></div>
+  </div>
+
+  <div class="partner-row">
+    <label class="partner-name-field">B.2 Partner Agency / Industry / Community<input name="project_{{idx}}_partner_name" placeholder="Input partner name"></label>
+    <label class="partner-type-field">Type<select name="project_{{idx}}_partner_category"><option value="">Select</option><option value="LGU">LGU</option><option value="INDUSTRY">Industry</option><option value="SME">SME</option><option value="OTHERS">Others</option></select></label>
+  </div>
+
+  <div class="choice-row organized-choices">
+    <label class="choice-card"><input type="checkbox" name="project_{{idx}}_with_moa_mou"><span><b>B.3 With MOA/MOU</b></span></label>
+    <label class="choice-card"><input type="checkbox" name="project_{{idx}}_board_confirmed" data-toggle="#project{{idx}}BoardFields"><span><b>B.4 Board Confirmed</b></span></label>
+  </div>
+  <div id="project{{idx}}BoardFields" class="conditional-box hidden"><div class="formgrid two"><label>Board Resolution No.<input name="project_{{idx}}_board_resolution_no"></label><label>Date<input type="date" name="project_{{idx}}_board_resolution_date"></label></div></div>
+
+  <div class="team-grid nested-team">
+    <div class="person-panel"><h3>C.1 Leader</h3><label>Name<input name="project_{{idx}}_leader_name"></label><label>Position / Designation<input name="project_{{idx}}_leader_position"></label><label>Email / Contact No.<input name="project_{{idx}}_leader_contact"></label></div>
+    <div class="person-panel"><h3>C.2 Assistant Leader</h3><label>Name<input name="project_{{idx}}_assistant_name"></label><label>Position / Designation<input name="project_{{idx}}_assistant_position"></label><label>Email / Contact No.<input name="project_{{idx}}_assistant_contact"></label></div>
+  </div>
+
+  <div class="repeater-block compact-repeater">
+    <div class="repeater-heading"><label>C.3 Members</label><button type="button" class="mini-action" data-add-line="#project{{idx}}Members" data-line-name="project_{{idx}}_members[]" data-placeholder="Input member name">＋ Add Member</button></div>
+    <div id="project{{idx}}Members" class="line-repeater"><div class="line-input"><input name="project_{{idx}}_members[]" placeholder="Input member name"><button type="button" class="line-remove" data-remove-line>×</button></div></div>
+  </div>
+
+  <div class="formgrid two">
+    <label>D. Type of Clientele<input name="project_{{idx}}_clientele"></label>
+    <label>E. Target Area<input name="project_{{idx}}_target_area"></label>
+    <label>F. Start Date<input type="date" name="project_{{idx}}_start_date"></label>
+    <label>F. End Date<input type="date" name="project_{{idx}}_end_date"></label>
+    <label>G. Project Cost<input type="number" min="0" step="0.01" name="project_{{idx}}_project_cost"></label>
+    <label>G. Funding Source<input name="project_{{idx}}_funding_source"></label>
+  </div>
+  <label>H. URDEA<textarea name="project_{{idx}}_urdea" rows="2"></textarea></label>
+  <div class="field-group-label sdg-label-row"><span>I. Sustainable Development Goal/s</span><button type="button" class="mini-action" data-add-sdg="#project{{idx}}Sdgs" data-sdg-prefix="project_{{idx}}_">＋ Add SDG</button></div>
+  <div id="project{{idx}}Sdgs" class="sdg-stack"><div class="sdg-row" data-sdg-row><div class="sdg-row-head"><b>SDG <span data-sdg-number>1</span></b><button type="button" class="icon danger-text" data-remove-sdg>Remove</button></div><div class="formgrid two"><label>Goal Description<input name="project_{{idx}}_sdg_goal[]" placeholder="Input SDG goal description"></label><label>Target<input name="project_{{idx}}_sdg_target[]" placeholder="Input target"></label></div><div class="formgrid two"><label>Description<textarea name="project_{{idx}}_sdg_description[]" rows="2" placeholder="Input description"></textarea></label><label>Indicator<input name="project_{{idx}}_sdg_indicator[]" placeholder="Input indicator"></label></div></div></div>
+
+  <div class="nested-activities" data-prefix="project_{{idx}}_">
+    <div class="nested-title-row"><h4>J. Activities</h4><small>Minimum 3 on final Save</small></div>
+    {% for x in '123' %}
+      <div class="activity-card compact">
+        <div class="activity-head"><b>Activity {{forloop.counter}}</b></div>
+        <div class="formgrid three"><label>Title<input name="project_{{idx}}_activity_title[]"></label><label>Date<input type="date" name="project_{{idx}}_activity_date[]"></label><label>Time<input type="time" name="project_{{idx}}_activity_time[]"></label><label>Venue<input name="project_{{idx}}_activity_venue[]"></label><label>Activity Leader<input name="project_{{idx}}_activity_leader[]"></label><label>Budget<input type="number" min="0" step="0.01" name="project_{{idx}}_activity_budget[]"></label></div>
+        <div class="formgrid three"><label>Topics<textarea name="project_{{idx}}_activity_topics[]" rows="2"></textarea></label><label>Objectives<textarea name="project_{{idx}}_activity_objectives[]" rows="2"></textarea></label><label>Learning Outcomes<textarea name="project_{{idx}}_activity_outcomes[]" rows="2"></textarea></label></div>
+      </div>
+    {% endfor %}
+    <button type="button" class="secondary" data-add-nested-activity>＋ Add Activity</button>
+  </div>
+</div>

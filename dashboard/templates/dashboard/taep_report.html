@@ -1,0 +1,6 @@
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<div class="page-title"><div><p class="eyebrow">TAEP REPORT</p><h1>Technical Advisory Extension Program</h1><p>This report intentionally contains only TAEP Indicators 1–4 and is consolidated from SAVED QPAR inputs across all schools and campuses.</p></div><form class="inline"><input type="number" name="year" value="{{year}}" min="2000" max="2100"><button class="secondary">Apply</button><a class="primary" target="_blank" href="{% url 'taep_print' %}?year={{year}}">Print Preview</a></form></div>
+<div class="notice"><b>TAEP = Indicators 1–4 only.</b> The remaining 20 QPAR indicators stay in QPAR Input and are not included in this TAEP Report.</div>
+{% for ind,quarters in tables %}<section class="card table-scroll taep-card"><h3>{{ind.order}}. {{ind.name}}</h3><table class="data"><thead><tr><th>Quarter</th>{% if quarters.0.1 %}{% for u,v in quarters.0.1 %}<th>{{u.name}}</th>{% endfor %}{% endif %}<th>Total</th></tr></thead><tbody>{% for q,vals,total in quarters %}<tr><th>Q{{q}}</th>{% for u,v in vals %}<td>{{v}}</td>{% endfor %}<td><b>{{total}}</b></td></tr>{% endfor %}</tbody></table></section>{% endfor %}
+{% endblock %}

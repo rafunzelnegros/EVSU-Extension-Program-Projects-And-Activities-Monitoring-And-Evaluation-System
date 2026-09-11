@@ -1,0 +1,21 @@
+<!doctype html>
+<html><head><meta charset="utf-8"><title>Work Plan and Monitoring Log for Field Visits</title>
+<style>
+@page{size:landscape;margin:8mm}body{font-family:Arial,sans-serif;font-size:10px;color:#111}table{width:100%;border-collapse:collapse}th,td{border:1px solid #222;padding:5px;vertical-align:top}.header td{text-align:center}.title{font-size:17px;font-weight:700}.meta{font-size:10px;line-height:1.7}.eval{border:1px solid #222;min-height:125px;padding:10px;white-space:pre-wrap}.sign{display:grid;grid-template-columns:repeat(4,1fr);gap:22px;margin-top:32px;text-align:center}.sig{padding-top:44px;border-top:1px solid #222;min-height:45px}.sig .name{display:block;font-weight:700;text-transform:uppercase;margin-bottom:3px}.sig .role{display:block;font-size:9px}.print-date{margin:6px 0 10px;text-align:right;font-size:9px}.no-print{position:fixed;right:8px;top:8px;padding:8px 13px;font-weight:700}@media print{.no-print{display:none}}
+</style></head>
+<body>
+<button class="no-print" onclick="window.print()">Print</button>
+<table class="header"><tr><td rowspan="3" style="width:110px"><b>EVSU</b><br>1907</td><td rowspan="3"><div class="title">EASTERN VISAYAS STATE UNIVERSITY</div>Tacloban City<br><b>Title of Form: WORK PLAN AND MONITORING LOG FOR FIELD VISITS</b></td><th>Control No.</th><td>EVSU-ORDEXS-F-076</td></tr><tr><th>Revision No.</th><td>00</td></tr><tr><th>Date</th><td>{% now "F d, Y" %}</td></tr></table>
+<div class="print-date"><b>Printed:</b> {% now "F d, Y · g:i A" %}</div>
+<h3>For the {{obj.quarter}}{% if obj.quarter == 1 %}st{% elif obj.quarter == 2 %}nd{% elif obj.quarter == 3 %}rd{% else %}th{% endif %} quarter, {{obj.year}}</h3>
+<p class="meta"><b>Program Title:</b> {{obj.project.umbrella_program.title|default:'—'}} &nbsp;&nbsp; <b>Project Title:</b> {{obj.project.title}} &nbsp;&nbsp; <b>Implementing College/Department/Unit:</b> {{obj.project.unit.name}}<br><b>Duration:</b> {{obj.project.start_date}} – {{obj.project.end_date}} &nbsp;&nbsp; <b>Campus:</b> {{obj.project.unit.campus_name}}</p>
+<table><thead><tr><th>Objectives</th><th>Activities</th><th>Date / Place / Time</th><th>Expected Output<br>Parameter / Target</th><th>Person Contacted / Position</th><th>Result of the Objective for the Travel Undertaken</th><th>Remarks<br>(Observation, issues/problems, action points, comments)</th></tr></thead><tbody>
+{% for e in obj.entries.all %}<tr><td>{{e.objectives|linebreaksbr}}</td><td>{{e.activities|linebreaksbr}}</td><td>{{e.date|default:'—'}}<br>{{e.place|default:'—'}}<br>{{e.time|default:'—'}}</td><td>{{e.expected_parameter|default:'—'}}<br><b>Target:</b> {{e.expected_target|default:'—'}}</td><td>{{e.person_contacted|default:'—'}}<br>{{e.position|default:'—'}}</td><td>{{e.get_result_display}}{% if e.rescheduled_date %}<br><b>New date:</b> {{e.rescheduled_date}}{% endif %}</td><td>{{e.remarks|linebreaksbr}}</td></tr>{% empty %}<tr><td colspan="7">No monitoring entries.</td></tr>{% endfor %}</tbody></table>
+<h3>Evaluation</h3><div class="eval">{{obj.evaluation}}</div>
+<div class="sign">
+  <div class="sig"><span class="name">{{project_leader_name}}</span><span class="role">Prepared by: Program / Project Leader</span></div>
+  <div class="sig"><span class="name">{{coordinator_name}}</span><span class="role">Noted by: College Extension Coordinator</span></div>
+  <div class="sig"><span class="name">{{obj.partner_representative_name|default:'—'}}{% if obj.partner_representative_postnominals %}, {{obj.partner_representative_postnominals}}{% endif %}</span><span class="role">Attested: Head / Authorized Representative of Partner Agency / Industry / Community</span></div>
+  <div class="sig"><span class="name">{{director_name}}</span><span class="role">Approved: Director, OES / Campus Director</span></div>
+</div>
+</body></html>

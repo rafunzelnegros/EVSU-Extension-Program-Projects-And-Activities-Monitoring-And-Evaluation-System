@@ -1,0 +1,5 @@
+{% extends 'dashboard/base.html' %}{% block content %}
+<div class="page-title"><div><p class="eyebrow">ADMIN</p><h1>Activity Log</h1><p>Review system actions and narrow the history to a specific date range.</p></div></div>
+<form method="get" class="card smart-filterbar activity-log-filter"><label>From<input type="date" name="start" value="{{filter_start}}"></label><label>To<input type="date" name="end" value="{{filter_end}}"></label><button class="secondary">Filter</button><a class="ghost-btn" href="{% url 'activity_logs' %}">Reset</a></form>
+<div class="card">{% for l in logs %}<div class="listrow"><div><b>{{l.actor.get_full_name|default:l.actor|default:'System'}}</b><span>{{l.action}}</span><small>{{l.details}}</small></div><time>{{l.created_at|date:'M j, Y · g:i A'}}</time></div>{% empty %}<p>No activity matches this date range.</p>{% endfor %}</div>
+{% endblock %}
