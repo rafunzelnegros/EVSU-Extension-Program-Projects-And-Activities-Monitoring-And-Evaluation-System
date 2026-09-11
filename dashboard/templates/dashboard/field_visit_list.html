@@ -1,1 +1,35 @@
-{% extends 'dashboard/base.html' %}{% block content %}<div class="page-title"><div><p class="eyebrow">FIELD MONITORING</p><h1>Work Plan and Monitoring Log for Field Visits</h1><p>Filter by quarter/year and monitor scheduled project activities.</p></div>{% if current_role == 'COORDINATOR' %}<a class="primary" href="{% url 'field_visit_add' %}">＋ New Log</a>{% endif %}</div><form class="card filterbar"><label>Year<input type="number" name="year" placeholder="2026"></label><label>Quarter<select name="quarter"><option value="">All</option><option value="1">1st</option><option value="2">2nd</option><option value="3">3rd</option><option value="4">4th</option></select></label>{% if current_role != 'COORDINATOR' %}<label>School/Campus<select name="unit"><option value="">All</option>{% for u in units %}<option value="{{u.pk}}">{{u.name}}</option>{% endfor %}</select></label>{% endif %}<button class="secondary">Filter</button></form><div class="card table-scroll"><table class="data"><tr><th>Period</th><th>Project</th><th>Unit</th><th>Entries</th><th>Last Updated</th><th></th></tr>{% for r in rows %}<tr><td>Q{{r.quarter}} {{r.year}}</td><td><b>{{r.project.title}}</b></td><td>{{r.project.unit.name}}</td><td>{{r.entries.count}}</td><td>{{r.updated_at}}</td><td><a target="_blank" href="{% url 'field_visit_print' r.pk %}">Print / View →</a></td></tr>{% empty %}<tr><td colspan="6">No field visit logs yet.</td></tr>{% endfor %}</table></div>{% endblock %}
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<div class="page-title">
+  <div><p class="eyebrow">FIELD MONITORING</p><h1>Work Plan and Monitoring Log for Field Visits</h1><p>Choose the quarter and year, then open an approved Project to monitor its approved Activities.</p></div>
+</div>
+
+<form method="get" class="card smart-filterbar field-filterbar">
+  <label>Year<input type="number" name="year" value="{{filter_year}}" min="2000" max="2100"></label>
+  <label>Quarter<select name="quarter"><option value="1" {% if filter_quarter == 1 %}selected{% endif %}>1st Quarter</option><option value="2" {% if filter_quarter == 2 %}selected{% endif %}>2nd Quarter</option><option value="3" {% if filter_quarter == 3 %}selected{% endif %}>3rd Quarter</option><option value="4" {% if filter_quarter == 4 %}selected{% endif %}>4th Quarter</option></select></label>
+  {% if current_role != 'COORDINATOR' %}<label>School/Campus<select name="unit"><option value="">All units</option>{% for u in units %}<option value="{{u.pk}}" {% if filter_unit == u.pk|stringformat:'s' %}selected{% endif %}>{{u.name}}</option>{% endfor %}</select></label>{% endif %}
+  <label class="grow-filter">Project Search<input name="q" value="{{filter_q}}" placeholder="Search Project name..."></label>
+  <button class="secondary">Filter</button>
+  <a class="ghost-btn" href="{% url 'field_visit_list' %}">Reset</a>
+</form>
+
+<section class="card table-scroll">
+  <div class="list-context"><b>For the {% if filter_quarter == 1 %}1st{% elif filter_quarter == 2 %}2nd{% elif filter_quarter == 3 %}3rd{% else %}4th{% endif %} Quarter, {{filter_year}}</b><span>Projects are shown once only and sorted by the latest Project/Monitoring update.</span></div>
+  <table class="data roomy-table">
+    <thead><tr><th>Project</th><th>Umbrella Program</th><th>Unit</th><th>Duration</th><th>Monitoring</th><th>Last Updated</th><th></th></tr></thead>
+    <tbody>
+    {% for row in rows %}
+      <tr>
+        <td><b>{{row.project.title}}</b></td>
+        <td>{{row.project.umbrella_program.title|default:'—'}}</td>
+        <td>{{row.project.unit.name}}</td>
+        <td>{{row.project.start_date|default:'—'}} → {{row.project.end_date|default:'—'}}</td>
+        <td>{% if row.log %}<span class="status-badge saved">{{row.entries}} monitored activities</span>{% else %}<span class="status-badge draft">Not started</span>{% endif %}</td>
+        <td>{{row.last_updated|date:'M j, Y · g:i A'}}</td>
+        <td><a class="row-action" href="{% url 'field_visit_monitor' row.project.pk %}?year={{filter_year}}&quarter={{filter_quarter}}">{% if current_role == 'COORDINATOR' %}Open Monitoring →{% else %}View Monitoring →{% endif %}</a></td>
+      </tr>
+    {% empty %}<tr><td colspan="7" class="empty-cell">No approved Projects match this quarter/year and search.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endblock %}

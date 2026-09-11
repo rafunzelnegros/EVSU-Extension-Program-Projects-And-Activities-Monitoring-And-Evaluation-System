@@ -1,12 +1,35 @@
-# Merge / Migration Notes
+# Migration Notes — Refined v5
 
-The recovered August build used a generic `ExtensionPPA` record and separate TAEP/QPAR models. This revision restructures PPAs around a real hierarchy and should be migrated carefully rather than pointed directly at the only copy of the old database.
+## Baseline used
 
-Recommended path: make a copy of the current project and database; run this revision separately; export old `ExtensionPPA` records; map records with type PROGRAM to `PPA(ppa_type=PROGRAM)`, type PROJECT to `PPA(ppa_type=PROJECT)`, and activity-type rows to `Activity` under the correct project; then verify dashboard totals before retiring the old schema.
+This package was built from `evsu_extension_revision_2026_09_11_ui_fixed`, because that is the user's confirmed last downloaded/working ZIP. The later dashboard-reference styling was selectively merged into that base.
 
-The QPAR/TAEP redesign keeps all 24 indicators and makes QPAR the source of the dashboard's first four TAEP indicators. If the office later confirms that M&E Heads must directly encode a separate TAEP adjustment form, add an adjustment layer rather than duplicating the QPAR records.
+## Included migration strategy
 
-## UI reference alignment (v4)
-- Dashboard layout was realigned to the provided EVSU reference screenshots: white institutional header, maroon hero, signed-in unit card, Programs/Projects status table, summary ring, Assessment Overview, Board Confirmation & Agreements, Active Partnerships, and TAEP section.
-- The Personnel and Students Involved by Sex / gender visualization was intentionally removed per the latest requirement.
-- Role-specific navigation from the revised CAPSTONE requirements is retained; only the visual language/layout was brought back to the approved dashboard aesthetic.
+The September 11 `ui_fixed` package did not ship migration files and instructed the user to run `python manage.py makemigrations dashboard`. A normal first migration from that build would therefore be recorded as `dashboard.0001_initial`.
+
+This v5 package includes:
+
+- `0001_initial.py` — baseline schema matching the `ui_fixed` models.
+- `0002_refined_workflows.py` — adds the new field-visit partner signatory fields, QMR variable signatory fields, nullable/conditional phase/status behavior, and updated field-visit ordering.
+
+This is intended to support both a fresh database and the common case where an existing `ui_fixed` database already records `dashboard.0001_initial`.
+
+## Before migrating an existing database
+
+Always copy/back up the existing database first. Then run:
+
+```powershell
+python manage.py migrate
+```
+
+Do not run `--reset-users` when preserving the existing database.
+
+If your local migration history used a different migration name/schema than the normal `0001_initial`, stop on any migration-history error rather than deleting migration records or the database.
+
+## Data behavior changes that do not require destructive conversion
+
+- Existing Program/Project/Activity records remain the core PPA hierarchy.
+- QPAR remains the source for all 24 indicators; only indicators 1–4 feed TAEP dashboard/report surfaces.
+- Existing users can remain. If `first_name`/`last_name` are blank, UI/signatories fall back to username until real names are entered.
+- Field-visit list now de-duplicates by Project for the selected Year/Quarter and edits the latest Project-period monitoring log instead of creating a new visible row per revision.

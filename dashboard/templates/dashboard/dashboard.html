@@ -16,8 +16,8 @@
     </div>
     <div class="signed-card">
       <small>SIGNED IN AS</small>
-      <strong>{% if current_unit %}{{ current_unit.name }}{% elif current_role == 'ME_HEAD' %}Monitoring &amp; Evaluation{% elif current_role == 'DIRECTOR' %}Extension Director{% elif current_role == 'ADMIN_STAFF' %}Admin Staff{% else %}{{ request.user.username }}{% endif %}</strong>
-      <span>{% if current_role == 'ME_HEAD' %}M&amp;E Head{% elif current_role == 'DIRECTOR' %}Director{% elif current_role == 'ADMIN_STAFF' %}Admin Staff{% elif current_role == 'COORDINATOR' %}Coordinator{% else %}User{% endif %}</span>
+      <strong>{{ current_user_name }}</strong>
+      <span>{{ current_role_label }}</span>
     </div>
   </div>
 </section>
@@ -25,7 +25,19 @@
 
 {% block content %}
 <div class="reference-dashboard">
-  <div class="as-of-row">AS OF: <strong>{% now "F j, Y · g:i A" %}</strong></div>
+  <div class="dashboard-period-row">
+    <div class="as-of-row">AS OF: <strong>{% now "F j, Y · g:i A" %}</strong></div>
+    <form method="get" class="period-picker compact-filter">
+      <label>Budget Year<input type="number" name="year" value="{{year}}" min="2000" max="2100"></label>
+      <label>Quarter<select name="quarter">
+        <option value="1" {% if quarter == 1 %}selected{% endif %}>Q1</option>
+        <option value="2" {% if quarter == 2 %}selected{% endif %}>Q2</option>
+        <option value="3" {% if quarter == 3 %}selected{% endif %}>Q3</option>
+        <option value="4" {% if quarter == 4 %}selected{% endif %}>Q4</option>
+      </select></label>
+      <button class="secondary compact-btn">Apply</button>
+    </form>
+  </div>
 
   <div class="overview-grid">
     <section class="reference-card status-table-card">
@@ -97,31 +109,65 @@
 
   <section class="taep-reference-section">
     <div class="taep-title-row">
-      <div><h2>TAEP</h2><p>Technical Advisory Extension Program outcome indicators · Budget Year {{year}}</p></div>
+      <div>
+        <h2>TAEP</h2>
+        <p>First four Technical Advisory Extension Program indicators · Q{{quarter}} {{year}}</p>
+      </div>
       {% if current_role == 'COORDINATOR' %}<a class="outline-action" href="{% url 'qpar_list' %}">Open QPAR Input</a>{% elif current_role == 'ME_HEAD' %}<a class="outline-action" href="{% url 'taep_report' %}">View TAEP Report</a>{% endif %}
     </div>
     <div class="taep-cards">
       {% for ind,vals,total in taep %}
       <article class="taep-reference-card">
         <div class="taep-number">{{ind.order|stringformat:'02d'}}</div>
-        <div class="taep-copy"><strong>{{ind.name}}</strong><div class="taep-unit-values">{% for u,v in vals %}<span>{{u.code}} <b>{{v}}</b></span>{% endfor %}</div></div>
-        <div class="taep-total"><small>Total</small><strong>{{total}}</strong></div>
+        <div class="taep-copy">
+          <strong>{{ind.name}}</strong>
+          {% if current_role != 'COORDINATOR' %}
+          <div class="taep-unit-values">{% for u,v in vals %}<span>{{u.code}} <b>{{v}}</b></span>{% endfor %}</div>
+          {% endif %}
+        </div>
+        <div class="taep-total"><small>{% if current_role == 'COORDINATOR' %}Your Total{% else %}Total{% endif %}</small><strong>{{total}}</strong></div>
       </article>
       {% empty %}<div class="reference-card empty-state"><b>No TAEP indicators yet.</b><span>Run the seed command to create the extension indicators.</span></div>{% endfor %}
     </div>
   </section>
 
-  {% if forecast %}
-  <section class="reference-card forecast-reference">
-    <div class="reference-card-head compact-head">
-      <h2>Prediction &amp; Analytics</h2>
-      <p>Project-start trend forecast for planning and decision support.</p>
-    </div>
-    <div class="forecast-grid">
-      {% for r in forecast %}
-        <article class="forecast-item"><div><span class="rank">#{{forloop.counter}}</span><b>{{r.unit.name}}</b><small>{{r.actual}} current projects</small></div><div class="forecast-bar"><span style="width:{% widthratio r.year_forecast 20 100 %}%"></span></div><strong>{{r.year_forecast}}<small> projected</small></strong></article>
-      {% endfor %}
-    </div>
+  {% if current_role == 'DIRECTOR' or current_role == 'ADMIN_STAFF' %}
+  <section class="prediction-overview-grid">
+    <article class="reference-card prediction-chart-card">
+      <div class="reference-card-head compact-head">
+        <h2>Prediction &amp; Analytics Overview</h2>
+        <p>Cumulative project trend by quarter. The detailed method is available in Prediction &amp; Analysis.</p>
+      </div>
+      {% if forecast %}
+      <div class="forecast-line-chart-wrap">
+        <svg class="forecast-line-chart" viewBox="0 0 106 100" preserveAspectRatio="none" role="img" aria-label="Project forecast line chart">
+          <line x1="8" y1="90" x2="98" y2="90" class="chart-axis"></line>
+          <line x1="8" y1="66" x2="98" y2="66" class="chart-grid"></line>
+          <line x1="8" y1="42" x2="98" y2="42" class="chart-grid"></line>
+          <line x1="8" y1="18" x2="98" y2="18" class="chart-grid"></line>
+          {% for r in forecast %}<polyline class="forecast-line {{r.chart_class}}" points="{{r.chart_points}}"></polyline>{% endfor %}
+        </svg>
+        <div class="chart-quarter-labels"><span>Q1</span><span>Q2</span><span>Q3</span><span>Q4</span></div>
+      </div>
+      <div class="forecast-legend">
+        {% for r in forecast %}<span class="{{r.chart_class}}"><i></i>{{r.unit.code}}</span>{% endfor %}
+      </div>
+      {% else %}<div class="empty-state"><b>No project history yet.</b><span>The forecast will appear after saved projects have Start Dates.</span></div>{% endif %}
+    </article>
+
+    <article class="reference-card prediction-outcome-card">
+      <p class="eyebrow">EXPECTED OUTCOME</p>
+      {% if prediction_top %}
+        <h2>{{prediction_top.unit.name}}</h2>
+        <p>currently has the strongest projected year-end project count based on the recorded quarterly trend.</p>
+        <div class="prediction-number"><strong>{{prediction_top.year_forecast}}</strong><span>projected projects by year-end</span></div>
+        <div class="prediction-small"><span>Current cumulative</span><b>{{prediction_top.actual}}</b></div>
+        <div class="prediction-small"><span>Next-quarter forecast</span><b>{{prediction_top.quarter_forecast}}</b></div>
+      {% else %}
+        <h2>No prediction yet</h2><p>Add approved projects with Start Dates to establish a trend.</p>
+      {% endif %}
+      <a class="primary full-action" href="{% url 'analytics' %}">Open Prediction &amp; Analysis</a>
+    </article>
   </section>
   {% endif %}
 </div>

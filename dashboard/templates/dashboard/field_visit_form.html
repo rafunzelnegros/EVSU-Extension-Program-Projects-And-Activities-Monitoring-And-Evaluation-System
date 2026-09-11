@@ -1,1 +1,77 @@
-{% extends 'dashboard/base.html' %}{% block content %}{% if not selected %}<div class="page-title"><div><p class="eyebrow">NEW FIELD VISIT LOG</p><h1>Select Project and Quarter</h1><p>The next screen will prefill activities from the selected Project Design.</p></div></div><form method="get" class="card form-section"><div class="formgrid three"><label>Project<select name="project" required>{% for p in projects %}<option value="{{p.pk}}">{{p.title}} — {{p.unit.name}}</option>{% endfor %}</select></label><label>Year<input name="year" type="number" value="{{year}}"></label><label>Quarter<select name="quarter"><option value="1">1st Quarter</option><option value="2">2nd Quarter</option><option value="3">3rd Quarter</option><option value="4">4th Quarter</option></select></label></div><button class="primary">Load Project Activities →</button></form>{% else %}<form method="post">{% csrf_token %}<input type="hidden" name="project" value="{{selected.pk}}"><input type="hidden" name="year" value="{{year}}"><input type="hidden" name="quarter" value="{{quarter}}"><div class="page-title"><div><p class="eyebrow">FOR THE {{quarter}}{% if quarter == 1 %}ST{% elif quarter == 2 %}ND{% elif quarter == 3 %}RD{% else %}TH{% endif %} QUARTER, {{year}}</p><h1>{{selected.title}}</h1><p>{{selected.unit.name}} · {{selected.start_date}} – {{selected.end_date}} · {{selected.unit.campus_name}}</p></div></div><section class="card"><div class="section-head"><div><h2>Monitoring Entries</h2><p>One card per activity. Add extra entries as needed.</p></div><button type="button" class="secondary" id="addFieldEntry">＋ Add Row</button></div><div id="fieldEntries">{% for a in preset %}{% include 'dashboard/partials/field_entry.html' with a=a %}{% empty %}{% include 'dashboard/partials/field_entry.html' %}{% endfor %}</div></section><section class="card"><label><b>Evaluation</b><textarea name="evaluation" rows="8" placeholder="Narrative evaluation..."></textarea></label></section><footer class="sticky-actions"><a class="secondary" href="{% url 'field_visit_list' %}">Cancel</a><button class="secondary" name="action" value="save">Save</button><button class="primary" name="action" value="save_print">Save & Print</button></footer></form><template id="fieldEntryTemplate">{% include 'dashboard/partials/field_entry.html' %}</template>{% endif %}{% endblock %}
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<form method="post" id="fieldVisitForm">{% csrf_token %}
+  <input type="hidden" name="year" value="{{year}}"><input type="hidden" name="quarter" value="{{quarter}}">
+  <div class="page-title">
+    <div>
+      <p class="eyebrow">FOR THE {% if quarter == 1 %}1ST{% elif quarter == 2 %}2ND{% elif quarter == 3 %}3RD{% else %}4TH{% endif %} QUARTER, {{year}}</p>
+      <h1>{{selected.title}}</h1>
+      <p>{{selected.unit.name}} · {{selected.start_date|default:'No start date'}} – {{selected.end_date|default:'No end date'}} · {{selected.unit.campus_name}}</p>
+    </div>
+    <div class="actions">
+      <a class="secondary" href="{% url 'field_visit_list' %}?year={{year}}&quarter={{quarter}}">← Back</a>
+      {% if logobj %}<a class="primary print-cta" target="_blank" href="{% url 'field_visit_print' logobj.pk %}">Print Preview</a>{% endif %}
+    </div>
+  </div>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>01</span><div><h2>Project Information</h2><p>These details are connected to the approved Project Design and are not edited in this monitoring form.</p></div></div>
+    <div class="readonly-grid">
+      <div><span>Program Title</span><b>{{selected.umbrella_program.title|default:'—'}}</b></div>
+      <div><span>Project Title</span><b>{{selected.title}}</b></div>
+      <div><span>Implementing College/Department/Unit</span><b>{{selected.unit.name}}</b></div>
+      <div><span>Campus</span><b>{{selected.unit.campus_name}}</b></div>
+      <div><span>Duration</span><b>{{selected.start_date|default:'—'}} → {{selected.end_date|default:'—'}}</b></div>
+      <div><span>Monitoring Period</span><b>Q{{quarter}} {{year}}</b></div>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>02</span><div><h2>Approved Activities Monitoring</h2><p>One monitoring block per approved Activity. Activity title, objectives, and approved schedule/venue are read-only.</p></div></div>
+    <div class="monitoring-stack">
+      {% for row in activity_rows %}
+      <article class="monitoring-activity-card">
+        <header><span>Activity {{forloop.counter}}</span><h3>{{row.activity.title}}</h3></header>
+        <div class="approved-data-grid">
+          <div class="wide"><span>Objectives</span><p>{{row.activity.objectives|default:'—'|linebreaksbr}}</p></div>
+          <div><span>Approved Date</span><b>{{row.activity.date|default:'—'}}</b></div>
+          <div><span>Approved Time</span><b>{{row.activity.time|default:'—'}}</b></div>
+          <div><span>Approved Venue</span><b>{{row.activity.venue|default:'—'}}</b></div>
+          <div><span>Activity Leader</span><b>{{row.activity.activity_leader|default:'—'}}</b></div>
+        </div>
+        <div class="formgrid two monitoring-inputs">
+          <label>Expected Output — Parameter<input name="parameter_{{row.activity.pk}}" value="{{row.entry.expected_parameter|default_if_none:''}}" {% if not can_edit %}readonly{% endif %} placeholder="Input output parameter"></label>
+          <label>Expected Output — Target<input name="target_{{row.activity.pk}}" value="{{row.entry.expected_target|default_if_none:''}}" {% if not can_edit %}readonly{% endif %} placeholder="Input target"></label>
+          <label>Person Contacted<input name="person_{{row.activity.pk}}" value="{{row.entry.person_contacted|default_if_none:''}}" {% if not can_edit %}readonly{% endif %} placeholder="Input person contacted"></label>
+          <label>Position<input name="position_{{row.activity.pk}}" value="{{row.entry.position|default_if_none:''}}" {% if not can_edit %}readonly{% endif %} placeholder="Input position"></label>
+        </div>
+        <div class="formgrid two result-grid">
+          <label>Result
+            <select name="result_{{row.activity.pk}}" class="result-select" data-reschedule-target="#reschedule{{row.activity.pk}}" {% if not can_edit %}disabled{% endif %}>
+              <option value="COMPLETED" {% if row.entry.result == 'COMPLETED' %}selected{% endif %}>Completed</option>
+              <option value="RESCHEDULED" {% if row.entry.result == 'RESCHEDULED' %}selected{% endif %}>Rescheduled</option>
+              <option value="NOT_CONDUCTED" {% if not row.entry or row.entry.result == 'NOT_CONDUCTED' %}selected{% endif %}>Not Conducted</option>
+            </select>
+          </label>
+          <label id="reschedule{{row.activity.pk}}" class="reschedule-field {% if row.entry.result != 'RESCHEDULED' %}hidden{% endif %}">New Date<input type="date" name="rescheduled_{{row.activity.pk}}" value="{{row.entry.rescheduled_date|date:'Y-m-d'}}" {% if not can_edit %}readonly{% endif %}></label>
+        </div>
+        <label>Remarks <small>(Observation, issues/problems, action points, comments)</small><textarea name="remarks_{{row.activity.pk}}" rows="3" {% if not can_edit %}readonly{% endif %} placeholder="Input monitoring remarks...">{{row.entry.remarks|default:''}}</textarea></label>
+      </article>
+      {% empty %}<div class="empty-state"><b>No approved Activities are available for monitoring.</b><span>Add Activities in the approved Project Design first.</span></div>{% endfor %}
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>03</span><div><h2>Evaluation &amp; Printable Signatory</h2><p>The partner representative is entered here. The Project Leader, Coordinator, and Director names are generated automatically on the printable.</p></div></div>
+    <label>Evaluation<textarea name="evaluation" rows="7" {% if not can_edit %}readonly{% endif %} placeholder="Enter the narrative evaluation...">{{logobj.evaluation|default:''}}</textarea></label>
+    <div class="formgrid two">
+      <label>Head / Authorized Representative of Partner Agency / Industry / Community<input name="partner_representative_name" value="{{logobj.partner_representative_name|default:''}}" {% if not can_edit %}readonly{% endif %} placeholder="Input full name"></label>
+      <label>Post-nominal Letters<input name="partner_representative_postnominals" value="{{logobj.partner_representative_postnominals|default:''}}" {% if not can_edit %}readonly{% endif %} placeholder="e.g., PhD, MPA, RN"></label>
+    </div>
+  </section>
+
+  {% if can_edit %}
+  <footer class="sticky-actions form-sticky-actions"><a class="secondary" href="{% url 'field_visit_list' %}?year={{year}}&quarter={{quarter}}">Back</a><button class="secondary" name="action" value="save">Save</button><button class="primary" name="action" value="save_print">Save &amp; Print</button></footer>
+  {% endif %}
+</form>
+{% endblock %}

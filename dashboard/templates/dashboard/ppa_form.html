@@ -1,12 +1,97 @@
-{% extends 'dashboard/base.html' %}{% block content %}<form method="post" id="ppaForm">{% csrf_token %}<div class="page-title"><div><p class="eyebrow">PROJECT DESIGN</p><h1>Add {{mode|title}}</h1><p>{% if mode == 'program' %}Create the Program, its Projects, and each Project's Activities in one workflow.{% else %}Create a Project and its Activities in one workflow.{% endif %}</p></div></div>
-<section class="card form-section"><div class="section-head"><div><span class="step">Approval</span><h2>Approval References</h2></div></div><div class="formgrid two"><label>Notice to Proceed No.<input name="notice_to_proceed_no" placeholder="NTP No."></label><label>Special Order No.<input name="special_order_no" placeholder="Special Order No."></label></div><p class="hint">Required on final Save; drafts can remain incomplete.</p></section>
-<section class="card form-section"><div class="section-head"><div><span class="step">A–I</span><h2>{{mode|title}} Design</h2></div></div>
-{% if current_role == 'COORDINATOR' %}<label>Implementing College/Campus/Office<input value="{{auto_unit.name}}" disabled><input type="hidden" name="unit" value="{{auto_unit.pk}}"></label>{% else %}<label>Implementing College/Campus/Office<select name="unit" required><option value="">Select unit</option>{% for u in units %}<option value="{{u.pk}}">{{u.name}}</option>{% endfor %}</select></label>{% endif %}
-<div class="formgrid two"><label>A. Title<input name="title" required></label>{% if mode == 'project' %}<label>A.1 Umbrella Program<input id="umbrellaProgramInput" list="programSuggestions" placeholder="Start typing an existing Program..."><input type="hidden" id="umbrellaProgramId" name="umbrella_program"><datalist id="programSuggestions">{% for p in programs %}<option data-id="{{p.pk}}" value="{{p.title}}"></option>{% endfor %}</datalist></label>{% endif %}</div>
-<label>B. Proponent/s<textarea name="proponents" rows="2"></textarea></label><div class="formgrid two"><label>B.2 Partner Category<select name="partner_category"><option value="">None</option><option>LGU</option><option value="INDUSTRY">Industry</option><option>SME</option><option value="OTHERS">Others</option></select></label><label>Partner Name<input name="partner_name"></label></div>
-<div class="choice-row"><label><input type="checkbox" name="with_moa_mou"> B.3 With MOA/MOU</label><label><input type="checkbox" name="board_confirmed" data-toggle="#boardFields"> B.4 Board Confirmed</label></div><div id="boardFields" class="formgrid two hidden"><label>Board Resolution No.<input name="board_resolution_no"></label><label>Date<input type="date" name="board_resolution_date"></label></div>
-<h3>C. Management Team</h3><div class="person-card"><b>C.1 Leader</b><div class="formgrid three"><label>Name<input name="leader_name"></label><label>Position/Designation<input name="leader_position"></label><label>Email / Contact No.<input name="leader_contact"></label></div></div><div class="person-card"><b>C.2 Assistant Leader</b><div class="formgrid three"><label>Name<input name="assistant_name"></label><label>Position/Designation<input name="assistant_position"></label><label>Email / Contact No.<input name="assistant_contact"></label></div></div><label>C.3 Members<textarea name="members" rows="3" placeholder="One member per line"></textarea></label>
-<div class="formgrid two"><label>D. Type of Clientele<textarea name="clientele" rows="2"></textarea></label><label>E. Target Area<input name="target_area"></label><label>F. Start Date<input type="date" name="start_date"></label><label>F. End Date<input type="date" name="end_date"></label><label>G. Project Cost<input type="number" step="0.01" min="0" name="project_cost"></label><label>G. Funding Source<input name="funding_source"></label></div><label>H. University Research and Development and Extension Agenda (URDEA)<textarea name="urdea" rows="3" placeholder="Identify the specific URDEA addressed"></textarea></label><label>I. Sustainable Development Goal/s<textarea name="sdgs" rows="3" placeholder="Specify the SDG/s addressed"></textarea></label></section>
-{% if mode == 'project' %}<section class="card form-section"><div class="section-head"><div><span class="step">J</span><h2>Activities</h2><p>At least 3 activities are required on final Save.</p></div><button type="button" class="secondary" data-add-activity="#activities">＋ Add Activity</button></div><div id="activities" class="activity-stack">{% for i in '123' %}{% include 'dashboard/partials/activity_card.html' with n=forloop.counter %}{% endfor %}</div></section>{% else %}<section class="card form-section"><div class="section-head"><div><span class="step">Nested</span><h2>Projects under this Program</h2><p>Each project has its own design details and minimum 3 Activities.</p></div><button type="button" class="primary" id="addProject">＋ Add Project</button></div><div id="projects"></div></section>{% endif %}
-<footer class="sticky-actions"><a class="secondary" href="{% url 'ppa_list' %}">Cancel</a><button class="secondary" name="action" value="draft">Save Draft</button><button class="primary" name="action" value="save">Save</button></footer></form>
-<template id="activityTemplate">{% include 'dashboard/partials/activity_card.html' with n='__N__' %}</template><template id="projectTemplate">{% include 'dashboard/partials/project_card.html' with idx='__IDX__' %}</template>{% endblock %}
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<form method="post" id="ppaForm" class="organized-form">{% csrf_token %}
+  <div class="page-title form-page-title">
+    <div>
+      <p class="eyebrow">PROJECT DESIGN</p>
+      <h1>Add {{mode|title}}</h1>
+      <p>{% if mode == 'program' %}Create the Program, its Projects, and every Project's approved Activities in one workflow.{% else %}Create the approved Project Design and its Activities in one workflow.{% endif %}</p>
+    </div>
+  </div>
+
+  <section class="card form-section compact-section">
+    <div class="form-section-title"><span>A0</span><div><h2>Approval References</h2><p>Required for final Save. Drafts may remain incomplete.</p></div></div>
+    <div class="approval-lines">
+      <label class="horizontal-field"><span>Notice to Proceed No.</span><input name="notice_to_proceed_no" placeholder="Input the Notice to Proceed number"></label>
+      <label class="horizontal-field"><span>Special Order No.</span><input name="special_order_no" placeholder="Input the Special Order number"></label>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>A–B</span><div><h2>Program / Project Information</h2><p>Core identity, proponents, implementing unit, and partner information.</p></div></div>
+
+    <div class="static-info-row"><span>B.1 Implementing College/Campus/Office</span><strong>{{auto_unit.name}}</strong><input type="hidden" name="unit" value="{{auto_unit.pk}}"></div>
+
+    <div class="formgrid two balanced-grid">
+      <label>A. Title<input name="title" required placeholder="Input the title of the {{mode}}"></label>
+      {% if mode == 'project' %}
+      <label>A.1 Umbrella Program
+        <input id="umbrellaProgramInput" list="programSuggestions" placeholder="Start typing an existing Program..." autocomplete="off">
+        <input type="hidden" id="umbrellaProgramId" name="umbrella_program">
+        <datalist id="programSuggestions">{% for p in programs %}<option data-id="{{p.pk}}" value="{{p.title}}"></option>{% endfor %}</datalist>
+      </label>
+      {% endif %}
+    </div>
+
+    <div class="repeater-block">
+      <div class="repeater-heading"><label>B. Proponent/s</label><button type="button" class="mini-action" data-add-line="#proponentLines" data-line-name="proponents[]" data-placeholder="Input proponent name">＋ Add Proponent</button></div>
+      <div id="proponentLines" class="line-repeater"><div class="line-input"><input name="proponents[]" placeholder="Input proponent name"><button type="button" class="line-remove" data-remove-line aria-label="Remove proponent">×</button></div></div>
+    </div>
+
+    <div class="partner-row">
+      <label class="partner-name-field">B.2 Partner Agency / Industry / Community<input name="partner_name" placeholder="Input partner name"></label>
+      <label class="partner-type-field">Type<select name="partner_category"><option value="">Select</option><option value="LGU">LGU</option><option value="INDUSTRY">Industry</option><option value="SME">SME</option><option value="OTHERS">Others</option></select></label>
+    </div>
+
+    <div class="choice-row organized-choices">
+      <label class="choice-card"><input type="checkbox" name="with_moa_mou"><span><b>B.3 With MOA/MOU</b><small>Mark Yes if an agreement is recorded.</small></span></label>
+      <label class="choice-card"><input type="checkbox" name="board_confirmed" data-toggle="#boardFields"><span><b>B.4 Board Confirmed</b><small>Mark Yes to record the Board Resolution.</small></span></label>
+    </div>
+    <div id="boardFields" class="conditional-box hidden">
+      <div class="formgrid two"><label>Board Resolution No.<input name="board_resolution_no" placeholder="Input Board Resolution number"></label><label>Date<input type="date" name="board_resolution_date"></label></div>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>C</span><div><h2>Management Team</h2><p>Leader, assistant leader, and project members.</p></div></div>
+    <div class="team-grid">
+      <div class="person-panel"><h3>C.1 Leader</h3><label>Name<input name="leader_name" placeholder="Input full name"></label><label>Position / Designation<input name="leader_position" placeholder="Input position or designation"></label><label>Email Address / Contact No.<input name="leader_contact" placeholder="Input email address or contact number"></label></div>
+      <div class="person-panel"><h3>C.2 Assistant Leader</h3><label>Name<input name="assistant_name" placeholder="Input full name"></label><label>Position / Designation<input name="assistant_position" placeholder="Input position or designation"></label><label>Email Address / Contact No.<input name="assistant_contact" placeholder="Input email address or contact number"></label></div>
+    </div>
+    <div class="repeater-block member-block">
+      <div class="repeater-heading"><label>C.3 Members</label><button type="button" class="mini-action" data-add-line="#memberLines" data-line-name="members[]" data-placeholder="Input member name">＋ Add Member</button></div>
+      <div id="memberLines" class="line-repeater"><div class="line-input"><input name="members[]" placeholder="Input member name"><button type="button" class="line-remove" data-remove-line aria-label="Remove member">×</button></div></div>
+    </div>
+  </section>
+
+  <section class="card form-section">
+    <div class="form-section-title"><span>D–I</span><div><h2>Implementation Details</h2><p>Clientele, target area, duration, funding, university agenda, and SDGs.</p></div></div>
+    <div class="formgrid two balanced-grid">
+      <label>D. Type of Clientele<input name="clientele" placeholder="Input type of clientele"></label>
+      <label>E. Target Area<input name="target_area" placeholder="Input target area / location"></label>
+    </div>
+    <div class="field-group-label">F. Duration</div>
+    <div class="formgrid two compact-two"><label>Start Date<input type="date" name="start_date"></label><label>End Date<input type="date" name="end_date"></label></div>
+    <div class="field-group-label">G. Cost and Funding Source</div>
+    <div class="formgrid two"><label>Project Cost<input type="number" step="0.01" min="0" name="project_cost" placeholder="0.00"></label><label>Funding Source<input name="funding_source" placeholder="Input source of fund"></label></div>
+    <label>H. University Research and Development and Extension Agenda (URDEA)<textarea name="urdea" rows="3" placeholder="Identify the specific URDEA that this proposed Extension Program/Project aims to address"></textarea></label>
+    <label>I. Sustainable Development Goal/s<textarea name="sdgs" rows="3" placeholder="Specify the SDG/s that this proposed Extension Program/Project aims to address"></textarea></label>
+  </section>
+
+  {% if mode == 'project' %}
+  <section class="card form-section">
+    <div class="section-head"><div class="form-section-title no-margin"><span>J</span><div><h2>Activities</h2><p>At least three approved activities are required on final Save.</p></div></div><button type="button" class="secondary" data-add-activity="#activities">＋ Add Activity</button></div>
+    <div id="activities" class="activity-stack">{% for i in '123' %}{% include 'dashboard/partials/activity_card.html' with n=forloop.counter %}{% endfor %}</div>
+  </section>
+  {% else %}
+  <section class="card form-section">
+    <div class="section-head"><div class="form-section-title no-margin"><span>J</span><div><h2>Projects under this Program</h2><p>Each nested project keeps its own Project Design and minimum of three Activities.</p></div></div><button type="button" class="primary" id="addProject">＋ Add Project</button></div>
+    <div id="projects"></div>
+  </section>
+  {% endif %}
+
+  <footer class="sticky-actions form-sticky-actions"><a class="secondary" href="{% url 'ppa_list' %}">Cancel</a><button class="secondary" name="action" value="draft">Save Draft</button><button class="primary" name="action" value="save">Save</button></footer>
+</form>
+<template id="activityTemplate">{% include 'dashboard/partials/activity_card.html' with n='__N__' %}</template>
+<template id="projectTemplate">{% include 'dashboard/partials/project_card.html' with idx='__IDX__' %}</template>
+{% endblock %}

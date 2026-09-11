@@ -1,1 +1,47 @@
-{% extends 'dashboard/base.html' %}{% block content %}<div class="page-title"><div><p class="eyebrow">PROJECT DESIGN</p><h1>Programs, Projects & Activities</h1><p>Programs contain Projects; Projects contain at least three Activities.</p></div><div class="actions"><a class="secondary" href="{% url 'ppa_add_project' %}">＋ Add Project</a><a class="primary" href="{% url 'ppa_add_program' %}">＋ Add Program</a></div></div><div class="card table-scroll"><table class="data"><tr><th>Type</th><th>Title</th><th>Umbrella Program</th><th>Unit</th><th>Duration</th><th>Activities</th><th>Status</th><th></th></tr>{% for r in rows %}<tr><td><span class="pill">{{r.get_ppa_type_display}}</span></td><td><b>{{r.title}}</b></td><td>{{r.umbrella_program.title|default:'—'}}</td><td>{{r.unit.name}}</td><td>{{r.start_date|default:'—'}} → {{r.end_date|default:'—'}}</td><td>{{r.activities.count}}</td><td>{{r.get_workflow_status_display}}</td><td><a href="{% url 'ppa_detail' r.pk %}">View →</a></td></tr>{% empty %}<tr><td colspan="8">No PPAs yet.</td></tr>{% endfor %}</table></div>{% endblock %}
+{% extends 'dashboard/base.html' %}
+{% block content %}
+<div class="page-title">
+  <div>
+    <p class="eyebrow">PROJECT DESIGN</p>
+    <h1>Programs, Projects &amp; Activities</h1>
+    <p>Programs contain Projects; Projects contain approved Activities. Drafts stay easy to find through the filters below.</p>
+  </div>
+  <div class="actions"><a class="secondary" href="{% url 'ppa_add_project' %}">＋ Add Project</a><a class="primary" href="{% url 'ppa_add_program' %}">＋ Add Program</a></div>
+</div>
+
+<div class="record-summary-chips">
+  <a href="{% url 'ppa_list' %}" class="summary-chip {% if not filter_type and not filter_status %}active{% endif %}"><span>All</span><b>{{list_counts.all}}</b></a>
+  <a href="?type=PROGRAM" class="summary-chip {% if filter_type == 'PROGRAM' %}active{% endif %}"><span>Programs</span><b>{{list_counts.programs}}</b></a>
+  <a href="?type=PROJECT" class="summary-chip {% if filter_type == 'PROJECT' %}active{% endif %}"><span>Projects</span><b>{{list_counts.projects}}</b></a>
+  <a href="?status=DRAFT" class="summary-chip draft-chip {% if filter_status == 'DRAFT' %}active{% endif %}"><span>Drafts</span><b>{{list_counts.drafts}}</b></a>
+</div>
+
+<form method="get" class="card smart-filterbar">
+  <label class="grow-filter">Search<input name="q" value="{{filter_q}}" placeholder="Search program/project title..."></label>
+  <label>Type<select name="type"><option value="">All types</option><option value="PROGRAM" {% if filter_type == 'PROGRAM' %}selected{% endif %}>Programs</option><option value="PROJECT" {% if filter_type == 'PROJECT' %}selected{% endif %}>Projects</option></select></label>
+  <label>Status<select name="status"><option value="">All statuses</option><option value="SAVED" {% if filter_status == 'SAVED' %}selected{% endif %}>Saved</option><option value="DRAFT" {% if filter_status == 'DRAFT' %}selected{% endif %}>Draft</option></select></label>
+  <label>Sort<select name="sort"><option value="updated_desc" {% if filter_sort == 'updated_desc' %}selected{% endif %}>Last updated — newest</option><option value="updated_asc" {% if filter_sort == 'updated_asc' %}selected{% endif %}>Last updated — oldest</option><option value="title_asc" {% if filter_sort == 'title_asc' %}selected{% endif %}>Title A–Z</option><option value="title_desc" {% if filter_sort == 'title_desc' %}selected{% endif %}>Title Z–A</option><option value="type" {% if filter_sort == 'type' %}selected{% endif %}>Type</option></select></label>
+  <button class="secondary">Apply</button>
+  <a class="ghost-btn" href="{% url 'ppa_list' %}">Reset</a>
+</form>
+
+<div class="card table-scroll">
+  <table class="data roomy-table">
+    <thead><tr><th>Type</th><th>Title</th><th>Umbrella Program</th><th>Duration</th><th>Activities</th><th>Status</th><th>Last Updated</th><th></th></tr></thead>
+    <tbody>
+      {% for r in rows %}
+      <tr>
+        <td><span class="pill {% if r.ppa_type == 'PROGRAM' %}program-pill{% else %}project-pill{% endif %}">{{r.get_ppa_type_display}}</span></td>
+        <td><b>{{r.title}}</b><small class="table-subtext">{{r.unit.name}}</small></td>
+        <td>{{r.umbrella_program.title|default:'—'}}</td>
+        <td>{{r.start_date|default:'—'}} → {{r.end_date|default:'—'}}</td>
+        <td>{% if r.ppa_type == 'PROJECT' %}{{r.activities.count}}{% else %}—{% endif %}</td>
+        <td><span class="status-badge {% if r.workflow_status == 'DRAFT' %}draft{% else %}saved{% endif %}">{{r.get_workflow_status_display}}</span></td>
+        <td>{{r.updated_at|date:'M j, Y · g:i A'}}</td>
+        <td><a class="row-action" href="{% url 'ppa_detail' r.pk %}">View →</a></td>
+      </tr>
+      {% empty %}<tr><td colspan="8" class="empty-cell">No records match the current filters.</td></tr>{% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endblock %}
