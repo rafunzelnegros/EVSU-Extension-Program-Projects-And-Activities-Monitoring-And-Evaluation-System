@@ -1,93 +1,54 @@
 from django import forms
-from .models import UserProfile, Partnership, ExtensionPPA
+from django.contrib.auth.models import User
+from .models import *
 
-BASE_ATTRS = {'class': 'control'}
+class DateInput(forms.DateInput): input_type='date'
+class TimeInput(forms.TimeInput): input_type='time'
 
-
-class UserCreateForm(forms.Form):
-    username = forms.CharField(max_length=150, widget=forms.TextInput(attrs=BASE_ATTRS))
-    first_name = forms.CharField(max_length=150, required=False, widget=forms.TextInput(attrs=BASE_ATTRS))
-    last_name = forms.CharField(max_length=150, required=False, widget=forms.TextInput(attrs=BASE_ATTRS))
-    email = forms.EmailField(required=False, widget=forms.EmailInput(attrs=BASE_ATTRS))
-    role = forms.ChoiceField(choices=[('ADMIN', 'Admin Staff'), ('SCHOOL', 'School Coordinator'), ('CAMPUS', 'Campus Head')], widget=forms.Select(attrs=BASE_ATTRS))
-    unit = forms.ChoiceField(choices=[('', '— None for Admin Staff —')] + list(UserProfile._meta.get_field('unit').choices), required=False, widget=forms.Select(attrs=BASE_ATTRS))
-    password = forms.CharField(widget=forms.PasswordInput(attrs=BASE_ATTRS))
-
-
-class UserEditForm(forms.Form):
-    first_name = forms.CharField(max_length=150, required=False, widget=forms.TextInput(attrs=BASE_ATTRS))
-    last_name = forms.CharField(max_length=150, required=False, widget=forms.TextInput(attrs=BASE_ATTRS))
-    email = forms.EmailField(required=False, widget=forms.EmailInput(attrs=BASE_ATTRS))
-    role = forms.ChoiceField(choices=[('ADMIN', 'Admin Staff'), ('SCHOOL', 'School Coordinator'), ('CAMPUS', 'Campus Head')], widget=forms.Select(attrs=BASE_ATTRS))
-    unit = forms.ChoiceField(choices=[('', '— None for Admin Staff —')] + list(UserProfile._meta.get_field('unit').choices), required=False, widget=forms.Select(attrs=BASE_ATTRS))
-    is_active = forms.BooleanField(required=False)
-
-
-class PartnershipForm(forms.ModelForm):
+class PPAForm(forms.ModelForm):
     class Meta:
-        model = Partnership
-        exclude = ['created_by', 'updated_at']
-        labels = {
-            'partner_id': 'Partner ID',
-            'stakeholder_name': 'Partner / Stakeholder Name',
-            'partner_type': 'Partner Type',
-            'related_extension': 'Related Extension Program / Project',
-            'board_confirmed': 'Board Confirmed?',
-            'date_signed': 'Date Signed',
-            'status': 'Partnership Status',
-            'remarks': 'Remarks',
-        }
-        widgets = {
-            'partner_id': forms.TextInput(attrs=BASE_ATTRS),
-            'stakeholder_name': forms.TextInput(attrs=BASE_ATTRS),
-            'partner_type': forms.Select(attrs=BASE_ATTRS),
-            'related_extension': forms.TextInput(attrs=BASE_ATTRS),
-            'board_confirmed': forms.CheckboxInput(attrs={'class': 'checkinput'}),
-            'date_signed': forms.DateInput(attrs={'type': 'date', 'class': 'control'}),
-            'status': forms.Select(attrs=BASE_ATTRS),
-            'remarks': forms.Textarea(attrs={'rows': 3, 'class': 'control textarea'}),
-        }
+        model=PPA
+        fields=['notice_to_proceed_no','special_order_no','title','umbrella_program','proponents','partner_category','partner_name','with_moa_mou','board_confirmed','board_resolution_no','board_resolution_date','leader_name','leader_position','leader_contact','assistant_name','assistant_position','assistant_contact','members','clientele','target_area','start_date','end_date','project_cost','funding_source','urdea','sdgs']
+        widgets={'board_resolution_date':DateInput(),'start_date':DateInput(),'end_date':DateInput(),'proponents':forms.Textarea(attrs={'rows':2}),'members':forms.Textarea(attrs={'rows':3,'placeholder':'One member per line'}),'clientele':forms.Textarea(attrs={'rows':2}),'urdea':forms.Textarea(attrs={'rows':3}),'sdgs':forms.Textarea(attrs={'rows':3})}
 
-
-class ExtensionPPAForm(forms.ModelForm):
+class ActivityForm(forms.ModelForm):
     class Meta:
-        model = ExtensionPPA
-        exclude = ['created_by', 'updated_at']
-        labels = {
-            'program_id': 'Program ID',
-            'title': 'Program / Project / Activity Title',
-            'type': 'Type',
-            'implementing_unit': 'College / Implementing Unit',
-            'date_approved': 'Date Approved',
-            'approved': 'Approved?',
-            'board_confirmed': 'Board Confirmed?',
-            'trainees': 'No. of Trainees',
-            'training_length_days': 'Training Length (days)',
-            'internally_assessed': 'Internally Impact Assessed',
-            'externally_assessed': 'Externally Impact Assessed',
-        }
-        widgets = {
-            'date_approved': forms.DateInput(attrs={'type': 'date', 'class': 'control'}),
-            'remarks': forms.Textarea(attrs={'rows': 3, 'class': 'control textarea'}),
-        }
+        model=Activity
+        fields=['title','date','time','venue','activity_leader','topics','objectives','learning_outcomes','budget']
+        widgets={'date':DateInput(),'time':TimeInput(),'topics':forms.Textarea(attrs={'rows':2}),'objectives':forms.Textarea(attrs={'rows':2}),'learning_outcomes':forms.Textarea(attrs={'rows':2})}
 
-    def __init__(self, *args, **kwargs):
-        super().__init__(*args, **kwargs)
-        for name, field in self.fields.items():
-            if isinstance(field.widget, (forms.CheckboxInput,)):
-                field.widget.attrs['class'] = 'checkinput'
-            elif 'class' not in field.widget.attrs:
-                field.widget.attrs['class'] = 'control'
-        integer_fields = ['trainees', 'training_length_days', 'faculty_male', 'faculty_female', 'staff_male', 'staff_female', 'student_male', 'student_female']
-        for name in integer_fields:
-            self.fields[name].widget.attrs.update({'min': '0', 'step': '1', 'inputmode': 'numeric'})
+class ImpactAssessmentForm(forms.ModelForm):
+    class Meta:
+        model=ImpactAssessment
+        fields=['date','evaluations','lead','members']
+        widgets={'date':DateInput(),'evaluations':forms.Textarea(attrs={'rows':5}),'members':forms.Textarea(attrs={'rows':3,'placeholder':'1.\n2.\n3.'})}
 
-    def clean(self):
-        cleaned = super().clean()
-        approved = cleaned.get('approved')
-        date_approved = cleaned.get('date_approved')
-        if approved and not date_approved:
-            self.add_error('date_approved', 'Enter the approval date when Approved is checked.')
-        if not approved:
-            cleaned['date_approved'] = None
-        return cleaned
+class QuarterlyMonitoringReportForm(forms.ModelForm):
+    class Meta:
+        model=QuarterlyMonitoringReport
+        exclude=['created_by']
+        widgets={'period_start':DateInput(),'period_end':DateInput(),'date_conducted':DateInput(),'date_of_termination':DateInput(),'evaluation':forms.Textarea(attrs={'rows':8}),'inactive_remarks':forms.Textarea(attrs={'rows':3})}
+
+class FieldVisitLogForm(forms.ModelForm):
+    class Meta:
+        model=FieldVisitLog
+        fields=['project','year','quarter','evaluation']
+        widgets={'evaluation':forms.Textarea(attrs={'rows':7})}
+
+class FieldVisitEntryForm(forms.ModelForm):
+    class Meta:
+        model=FieldVisitEntry
+        exclude=['log','activity']
+        widgets={'objectives':forms.Textarea(attrs={'rows':2}),'activities':forms.Textarea(attrs={'rows':2}),'date':DateInput(),'time':TimeInput(),'rescheduled_date':DateInput(),'remarks':forms.Textarea(attrs={'rows':2})}
+
+class UserManageForm(forms.Form):
+    username=forms.CharField(max_length=150)
+    first_name=forms.CharField(max_length=150,required=False)
+    last_name=forms.CharField(max_length=150,required=False)
+    email=forms.EmailField(required=False)
+    role=forms.ChoiceField(choices=UserProfile.ROLES)
+    unit=forms.ModelChoiceField(queryset=Unit.objects.none(),required=False)
+    password=forms.CharField(widget=forms.PasswordInput,required=False,help_text='Required for new users; leave blank to keep current password.')
+    is_active=forms.BooleanField(required=False,initial=True)
+    def __init__(self,*args,**kwargs):
+        super().__init__(*args,**kwargs); self.fields['unit'].queryset=Unit.objects.filter(active=True)

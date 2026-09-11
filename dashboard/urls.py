@@ -1,30 +1,10 @@
 from django.urls import path
 from . import views
-
-urlpatterns = [
-    path('', views.dashboard, name='dashboard'),
-    path('taep/', views.taep_list, name='taep_list'),
-    path('taep/add/', views.taep_add, name='taep_add'),
-    path('taep/<int:pk>/edit/', views.taep_edit, name='taep_edit'),
-    path('taep/<int:pk>/delete/', views.taep_delete, name='taep_delete'),
-    path('taep/<int:pk>/view/', views.taep_view, name='taep_view'),
-    path('qpar/', views.qpar_list, name='qpar_list'),
-    path('qpar/add/', views.qpar_add, name='qpar_add'),
-    path('qpar/<int:pk>/edit/', views.qpar_edit, name='qpar_edit'),
-    path('qpar/<int:pk>/delete/', views.qpar_delete, name='qpar_delete'),
-    path('qpar/<int:pk>/view/', views.qpar_view, name='qpar_view'),
-    path('reports/', views.reports, name='reports'),
-    path('reports/taep/<int:pk>/view/', views.taep_review, name='taep_review'),
-    path('reports/qpar/<int:pk>/view/', views.qpar_review, name='qpar_review'),
-    path('reports/<str:kind>/<int:pk>/<str:action>/', views.report_action, name='report_action'),
-    path('notifications/', views.notifications, name='notifications'),
-    path('notifications/<int:pk>/open/', views.notification_open, name='notification_open'),
-    path('pdf/<str:kind>/<int:pk>/', views.pdf_view, name='pdf_view'),
-    path('data/partnerships/', views.partnerships, name='partnerships'),
-    path('data/partnerships/<int:pk>/edit/', views.partnership_edit, name='partnership_edit'),
-    path('data/ppas/', views.ppas, name='ppas'),
-    path('data/ppas/<int:pk>/edit/', views.ppa_edit, name='ppa_edit'),
-    path('admin/manage-users/', views.manage_users, name='manage_users'),
-    path('admin/manage-users/<int:pk>/edit/', views.user_edit, name='user_edit'),
-    path('admin/activity-log/', views.activity_logs, name='activity_logs'),
-]
+urlpatterns=[
+ path('login/',views.login_view,name='login'),path('logout/',views.logout_view,name='logout'),path('',views.dashboard,name='dashboard'),
+ path('ppas/',views.ppa_list,name='ppa_list'),path('ppas/add/program/',views.ppa_add_program,name='ppa_add_program'),path('ppas/add/project/',views.ppa_add_project,name='ppa_add_project'),path('ppas/<int:pk>/',views.ppa_detail,name='ppa_detail'),path('ppas/<int:pk>/lifecycle/',views.ppa_lifecycle,name='ppa_lifecycle'),
+ path('qpar/',views.qpar_list,name='qpar_list'),path('qpar/add/',views.qpar_edit,name='qpar_add'),path('qpar/<int:pk>/edit/',views.qpar_edit,name='qpar_edit'),
+ path('taep/',views.taep_report,name='taep_report'),
+ path('quarterly-monitoring/',views.qmr_list,name='qmr_list'),path('quarterly-monitoring/add/',views.qmr_edit,name='qmr_add'),path('quarterly-monitoring/<int:pk>/edit/',views.qmr_edit,name='qmr_edit'),path('quarterly-monitoring/<int:pk>/print/',views.qmr_print,name='qmr_print'),
+ path('field-visits/',views.field_visit_list,name='field_visit_list'),path('field-visits/add/',views.field_visit_create,name='field_visit_add'),path('field-visits/<int:pk>/print/',views.field_visit_print,name='field_visit_print'),
+ path('analytics/',views.analytics,name='analytics'),path('admin/users/',views.manage_users,name='manage_users'),path('admin/activity-log/',views.activity_logs,name='activity_logs')]

@@ -1,4 +1,50 @@
-{% load static %}<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Sign In | EVSU</title><link rel="stylesheet" href="{% static 'dashboard/css/app.css' %}"></head><body class="login-bg"><main class="login-shell">
-<section class="login-left"><img class="big-seal logo-img" src="{% static 'dashboard/img/evsu-logo.png' %}" alt="EVSU logo"><h1>EASTERN VISAYAS<br>STATE UNIVERSITY</h1><hr><small>Since 1907 · Tacloban City</small><div class="product"><h2>EXTENSION PPAs</h2><h3>Monitoring and Evaluation</h3><p>Tracking programs, projects, and activities across colleges and campuses — one reliable record at a time.</p></div><footer>One EVSU — Extension and Community Engagement Office</footer></section>
-<section class="login-right"><div><h1>Sign In</h1><p>Use the account issued to you by the Extension Office.</p>{% if form.errors %}<div class="error">Invalid username or password. Please try again.</div>{% endif %}<form method="post">{% csrf_token %}<label>Username * {{ form.username }}</label><label>Password * <span class="pw">{{ form.password }}<button type="button" id="showpw">Show</button></span></label><button class="loginbtn">Login</button></form><div class="login-note">Accounts are created by the Director. Contact the Extension Office for access.</div></div></section>
-</main><script>const b=document.getElementById('showpw');if(b){b.onclick=()=>{const p=document.getElementById('id_password');p.type=p.type==='password'?'text':'password';b.textContent=p.type==='password'?'Show':'Hide';};}</script></body></html>
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#6f1625">
+  <link rel="stylesheet" href="{% static 'dashboard/css/app.v3.css' %}">
+  <style>html,body{margin:0}.login-bg{min-height:100vh;background:#5b1020;display:grid;place-items:center;padding:24px}.login-shell{width:min(1040px,100%);background:#fff;border-radius:20px;overflow:hidden}</style>
+  <title>Sign In | EVSU Extension M&amp;E</title>
+</head>
+<body class="login-bg">
+  <div class="login-decor decor-one"></div><div class="login-decor decor-two"></div>
+  <div class="login-shell">
+    <section class="login-left">
+      <div class="login-brand">
+        <div class="big-seal"><span>EVSU</span><small>1907</small></div>
+        <div><h1>EASTERN VISAYAS<br>STATE UNIVERSITY</h1><p>Tacloban City</p></div>
+      </div>
+      <div class="login-divider"></div>
+      <div class="product">
+        <span class="login-kicker">EXTENSION SERVICES OFFICE</span>
+        <h2>Extension PPAs</h2>
+        <h3>Monitoring &amp; Evaluation</h3>
+        <p>A centralized workspace for monitoring programs, projects, activities, quarterly accomplishments, field visits, and evaluation across EVSU schools and campuses.</p>
+        <div class="login-features"><span>Role-based access</span><span>Live monitoring</span><span>Printable reports</span></div>
+      </div>
+      <footer>Eastern Visayas State University · Since 1907</footer>
+    </section>
+    <section class="login-right">
+      <div class="login-form-wrap">
+        <span class="login-badge">Authorized Personnel</span>
+        <h1>Welcome back</h1>
+        <p class="login-sub">Sign in using the account issued by the Extension Office.</p>
+        <form method="post" autocomplete="on">{% csrf_token %}
+          <label>Username<span class="field-wrap">{{form.username}}</span></label>
+          <label>Password<span class="pw field-wrap">{{form.password}}<button id="showpw" type="button" aria-label="Show password">Show</button></span></label>
+          {% if form.errors %}<p class="form-error">Invalid username or password. Please try again.</p>{% endif %}
+          <button class="loginbtn" type="submit">Sign In <span>→</span></button>
+        </form>
+        <p class="login-note">Access is restricted to authorized M&amp;E Heads, Coordinators, Admin Staff, and the Director.</p>
+      </div>
+    </section>
+  </div>
+<script>
+const show=document.getElementById('showpw');
+if(show){show.onclick=()=>{const i=document.getElementById('id_password'); const hidden=i.type==='password'; i.type=hidden?'text':'password'; show.textContent=hidden?'Hide':'Show';};}
+</script>
+</body>
+</html>

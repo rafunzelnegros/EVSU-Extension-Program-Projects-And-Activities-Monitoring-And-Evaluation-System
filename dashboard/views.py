@@ -1,784 +1,387 @@
+from datetime import date
 from decimal import Decimal, InvalidOperation
-
 from django.contrib import messages
+from django.contrib.auth import authenticate, login, logout
 from django.contrib.auth.decorators import login_required
+from django.contrib.auth.forms import AuthenticationForm
 from django.contrib.auth.models import User
-from django.db.models import Max
-from django.http import HttpResponseForbidden, FileResponse, Http404
+from django.core.exceptions import PermissionDenied, ValidationError
+from django.db import transaction
+from django.db.models import Count, Sum
+from django.http import Http404
 from django.shortcuts import render, redirect, get_object_or_404
-from django.urls import reverse
 from django.utils import timezone
-
-from .models import *
 from .forms import *
+from .models import *
+from .services import forecast_projects
 
-UNIT_FIELDS = {
-    'SAAD': 'saad', 'SAS': 'sas', 'SAME': 'same', 'SOT': 'sot', 'SOE': 'soe', 'SOED': 'soed',
-    'BURAUEN': 'burauen', 'CARIGARA': 'carigara', 'DULAG': 'dulag', 'ORMOC': 'ormoc', 'TANAUAN': 'tanauan'
-}
+PHASES={1:'Needs assessment',2:'Early project implementation',3:'Middle project implementation',4:'Late project implementation',5:'Completion of project',6:'Evaluation of output and outcome',7:'Impact evaluation'}
 
+def get_profile(user):
+    try:return user.evsu_profile
+    except Exception:return None
 
-def prof(user):
-    try:
-        return user.profile
-    except Exception:
-        return None
+def get_role(user):
+    if user.is_superuser:return UserProfile.ME_HEAD
+    p=get_profile(user); return p.role if p else ''
 
+def require_roles(user,*roles):
+    if get_role(user) not in roles: raise PermissionDenied
 
-def role(user):
-    if user.is_superuser:
-        return 'DIRECTOR'
-    profile = prof(user)
-    return profile.role if profile else ''
-
-
-def is_director(user):
-    return role(user) == 'DIRECTOR'
-
-
-def is_manager(user):
-    return role(user) in ('DIRECTOR', 'ADMIN')
-
-
-def unit_for(user):
-    profile = prof(user)
-    return profile.unit if profile else ''
-
+def unit_scope(user, qs):
+    if get_role(user)==UserProfile.COORDINATOR:
+        p=get_profile(user)
+        return qs.filter(unit=p.unit) if p and p.unit else qs.none()
+    return qs
 
 def log(user, action, details=''):
-    ActivityLog.objects.create(actor=user, action=action, details=details)
+    ActivityLog.objects.create(actor=user,action=action,details=details)
 
+def parse_bool(value): return str(value).lower() in ('1','true','yes','on')
+def dec(value):
+    try:return Decimal(value) if str(value).strip() else None
+    except (InvalidOperation,ValueError,TypeError):return None
 
-def current_quarter():
-    return ((timezone.localdate().month - 1) // 3) + 1
+def login_view(request):
+    if request.user.is_authenticated:return redirect('dashboard')
+    form=AuthenticationForm(request,data=request.POST or None)
+    if request.method=='POST' and form.is_valid():
+        login(request,form.get_user()); return redirect('dashboard')
+    return render(request,'dashboard/login.html',{'form':form})
 
-
-def allowed_q(user, quarter):
-    return is_director(user) or quarter <= current_quarter()
-
-
-def parse_number(value, percentage=False):
-    raw = (value or '').strip()
-    if raw == '':
-        return None
-    try:
-        value = Decimal(raw)
-    except InvalidOperation:
-        raise ValueError('Only numerical values are allowed.')
-    if value < 0:
-        raise ValueError('Values cannot be negative.')
-    if not percentage and value != value.to_integral_value():
-        raise ValueError('This indicator accepts whole numbers only.')
-    return value
-
-
-def scoped_ppas(user):
-    qs = ExtensionPPA.objects.all()
-    if not is_manager(user):
-        unit = unit_for(user)
-        qs = qs.filter(implementing_unit=unit) if unit else qs.none()
-    return qs
-
-
-def scoped_partnerships(user):
-    qs = Partnership.objects.all()
-    if not is_manager(user):
-        qs = qs.filter(created_by=user)
-    return qs
-
-
-def notify(user, title, message, link=''):
-    Notification.objects.create(user=user, title=title, message=message, link=link)
-
-
-def taep_rows(report, user):
-    director_mode = (report.unit == '') if report else is_director(user)
-    unit = '' if director_mode else (report.unit if report else unit_for(user))
-    units = UNITS if director_mode else [(unit, dict(UNITS).get(unit, unit))]
-    output = []
-
-    for indicator in ExtensionIndicator.objects.filter(active=True).order_by('order'):
-        quarters = []
-        for q in range(1, 5):
-            entry = report.quarter_entries.filter(indicator=indicator, quarter=q).first() if report else None
-            values = {code: (getattr(entry, UNIT_FIELDS[code]) if entry else None) for code, _ in units}
-            quarters.append({
-                'q': q,
-                'entry': entry,
-                'target': entry.target if entry else None,
-                'vals': values,
-                'total': entry.total if entry else 0,
-                'locked': not allowed_q(user, q),
-            })
-        meta = report.indicator_meta.filter(indicator=indicator).first() if report else None
-        target_total = sum((q['target'] or 0) for q in quarters)
-        accomplishment_total = sum((sum((v or 0) for v in q['vals'].values())) for q in quarters)
-        output.append({
-            'indicator': indicator, 'quarters': quarters, 'meta': meta,
-            'target_total': target_total, 'accomplishment_total': accomplishment_total,
-        })
-    return output, units, director_mode
-
-
-def save_taep(request, report):
-    rows, units, _ = taep_rows(report, request.user)
-    for row in rows:
-        indicator = row['indicator']
-        meta, _ = TaepIndicatorMeta.objects.get_or_create(report=report, indicator=indicator)
-        meta.remarks = request.POST.get(f'remarks_{indicator.pk}', '').strip()
-        uploaded = request.FILES.get(f'mov_{indicator.pk}')
-        if uploaded:
-            meta.mov_pdf = uploaded
-            meta.uploaded_by = request.user
-        meta.full_clean()
-        meta.save()
-
-        for q in range(1, 5):
-            entry, _ = TaepQuarterEntry.objects.get_or_create(report=report, indicator=indicator, quarter=q)
-            if allowed_q(request.user, q):
-                entry.target = parse_number(request.POST.get(f'target_{indicator.pk}_{q}'), indicator.is_percentage)
-                for code, _label in units:
-                    value = parse_number(request.POST.get(f'value_{indicator.pk}_{q}_{code}'), indicator.is_percentage)
-                    setattr(entry, UNIT_FIELDS[code], value)
-            entry.save()
-
+def logout_view(request):
+    if request.method=='POST': logout(request)
+    return redirect('login')
 
 @login_required
 def dashboard(request):
-    ppas = scoped_ppas(request.user)
-    programs = ppas.filter(type='PROGRAM')
-    projects = ppas.filter(type='PROJECT')
+    role=get_role(request.user); ppas=unit_scope(request.user,PPA.objects.all())
+    projects=ppas.filter(ppa_type=PPA.PROJECT); programs=ppas.filter(ppa_type=PPA.PROGRAM)
+    activities=Activity.objects.filter(project__in=projects)
+    today=timezone.localdate()
+    q=((today.month-1)//3)+1
 
-    status = {
-        'programs': {
-            'approved': programs.filter(approved=True).count(),
-            'board': programs.filter(board_confirmed=True).count(),
-            'ongoing': programs.filter(status='ONGOING').count(),
-            'inactive': programs.filter(status='INACTIVE').count(),
-            'terminated': programs.filter(status='TERMINATED').count(),
-        },
-        'projects': {
-            'approved': projects.filter(approved=True).count(),
-            'board': projects.filter(board_confirmed=True).count(),
-            'ongoing': projects.filter(status='ONGOING').count(),
-            'inactive': projects.filter(status='INACTIVE').count(),
-            'terminated': projects.filter(status='TERMINATED').count(),
-        },
-    }
+    def status_counts(qs):
+        data={'approved':0,'board_confirmed':0,'ongoing':0,'inactive':0,'terminated':0}
+        for obj in qs:
+            if obj.workflow_status==PPA.SAVED:
+                data['approved']+=1
+            if obj.board_confirmed:
+                data['board_confirmed']+=1
+            latest=None
+            if obj.ppa_type==PPA.PROJECT:
+                latest=obj.quarterly_monitoring_reports.order_by('-period_end','-updated_at').first()
+            if latest:
+                if latest.project_status==QuarterlyMonitoringReport.ONGOING: data['ongoing']+=1
+                elif latest.project_status==QuarterlyMonitoringReport.INACTIVE: data['inactive']+=1
+                elif latest.project_status==QuarterlyMonitoringReport.TERMINATED: data['terminated']+=1
+            elif obj.termination_date:
+                data['terminated']+=1
+            elif obj.start_date and obj.end_date and obj.start_date<=today<=obj.end_date:
+                data['ongoing']+=1
+            elif obj.end_date and obj.end_date<today:
+                data['inactive']+=1
+        return data
 
-    chart_values = {
-        'approved': status['programs']['approved'] + status['projects']['approved'],
-        'board': status['programs']['board'] + status['projects']['board'],
-        'ongoing': status['programs']['ongoing'] + status['projects']['ongoing'],
-        'inactive': status['programs']['inactive'] + status['projects']['inactive'],
-        'terminated': status['programs']['terminated'] + status['projects']['terminated'],
-    }
-    chart_sum = sum(chart_values.values())
-    chart_colors = {
-        'approved': '#7b1830',
-        'board': '#e5a900',
-        'ongoing': '#a34a5d',
-        'terminated': '#5b1020',
-        'inactive': '#b9a99f',
-    }
-    chart_labels = {
-        'approved': 'Approved',
-        'board': 'Board Confirmed',
-        'ongoing': 'On-going',
-        'terminated': 'Terminated',
-        'inactive': 'Inactive',
-    }
-    chart_segments = []
-    offset = Decimal('0')
-    for key in ['approved', 'board', 'ongoing', 'terminated', 'inactive']:
-        value = chart_values[key]
-        pct = (Decimal(value) / Decimal(chart_sum) * Decimal('100')) if chart_sum else Decimal('0')
-        chart_segments.append({
-            'key': key,
-            'label': chart_labels[key],
-            'value': value,
-            'pct': round(pct, 4),
-            'rest': round(Decimal('100') - pct, 4),
-            'offset': round(offset, 4),
-            'color': chart_colors[key],
-        })
-        offset += pct
+    status_programs=status_counts(programs)
+    status_projects=status_counts(projects)
+    summary_counts={k:status_programs[k]+status_projects[k] for k in status_programs}
+    summary_total=programs.count()+projects.count()
 
-    partnerships_qs = scoped_partnerships(request.user)
-    counts = {
-        'internal': ppas.filter(internally_assessed=True).count(),
-        'external': ppas.filter(externally_assessed=True).count(),
-        # The source sheet has no separate Agreement Type field. For the
-        # dashboard, confirmed MOA/MOU is inferred from the Remarks text.
-        'moa': partnerships_qs.filter(board_confirmed=True, remarks__icontains='MOA').count(),
-        'mou': partnerships_qs.filter(board_confirmed=True, remarks__icontains='MOU').count(),
-        'faculty_m': sum(x.faculty_male for x in ppas),
-        'faculty_f': sum(x.faculty_female for x in ppas),
-        'staff_m': sum(x.staff_male for x in ppas),
-        'staff_f': sum(x.staff_female for x in ppas),
-        'student_m': sum(x.student_male for x in ppas),
-        'student_f': sum(x.student_female for x in ppas),
-    }
-    personnel_raw = [
-        ('Faculty', counts['faculty_m'], counts['faculty_f']),
-        ('Staff', counts['staff_m'], counts['staff_f']),
-        ('Students', counts['student_m'], counts['student_f']),
-    ]
-    personnel_max = max([v for _label, male, female in personnel_raw for v in (male, female)] or [0])
-    personnel_scale = max(personnel_max, 1)
-    personnel_chart = [
-        {
-            'label': label,
-            'male': male,
-            'female': female,
-            'male_pct': round((male / personnel_scale) * 100, 2),
-            'female_pct': round((female / personnel_scale) * 100, 2),
-        }
-        for label, male, female in personnel_raw
-    ]
-    personnel_ticks = [
-        {'label': personnel_max, 'pct': 100},
-        {'label': round(personnel_max * .75), 'pct': 75},
-        {'label': round(personnel_max * .50), 'pct': 50},
-        {'label': round(personnel_max * .25), 'pct': 25},
-        {'label': 0, 'pct': 0},
-    ]
+    # The ring uses mutually exclusive operational states; approval/board confirmation remain in the legend/table.
+    operational=[summary_counts['ongoing'],summary_counts['terminated'],summary_counts['inactive']]
+    operational_total=sum(operational)
+    if operational_total:
+        p1=round(operational[0]/operational_total*100,2)
+        p2=round(p1+operational[1]/operational_total*100,2)
+        summary_gradient=f"conic-gradient(#b05066 0 {p1}%, #781328 {p1}% {p2}%, #cfc6c1 {p2}% 100%)"
+    else:
+        summary_gradient='conic-gradient(#e8e2de 0 100%)'
 
-    partnership_counts = {code: partnerships_qs.filter(status='ACTIVE', partner_type=code).count() for code, _ in Partnership.PARTNER_TYPES}
-    partnership_max = max(partnership_counts.values(), default=0)
-    partnership_scale = max(partnership_max, 1)
-    partnership_chart = [
-        {
-            'code': code,
-            'label': label,
-            'value': partnership_counts.get(code, 0),
-            'pct': round((partnership_counts.get(code, 0) / partnership_scale) * 100, 2),
-        }
-        for code, label in Partnership.PARTNER_TYPES
-    ]
+    internal_assessed=ImpactAssessment.objects.filter(project__in=projects,assessment_type=ImpactAssessment.INTERNAL,date__isnull=False).count()
+    external_assessed=ImpactAssessment.objects.filter(project__in=projects,assessment_type=ImpactAssessment.EXTERNAL,date__isnull=False).count()
+    assessment_counts={'internal':internal_assessed,'external':external_assessed}
+    board_counts={'confirmed':ppas.filter(board_confirmed=True).count(),'moa_mou':ppas.filter(with_moa_mou=True).count()}
 
-    chosen = [int(x) for x in request.GET.getlist('indicator') if x.isdigit()][:4] or [1, 2, 3, 4]
-    allinds = ExtensionIndicator.objects.filter(active=True).order_by('order')
-    year = timezone.localdate().year
-    tables = []
-    dashboard_units = UNITS if is_manager(request.user) else [(unit_for(request.user), dict(UNITS).get(unit_for(request.user), unit_for(request.user)))]
+    partner_labels=[('LGU','LGU'),('INDUSTRY','Industry'),('SME','SME'),('OTHERS','Other')]
+    partner_raw=[(code,label,ppas.filter(partner_category=code).count()) for code,label in partner_labels]
+    partner_max=max([n for _,_,n in partner_raw] or [1]) or 1
+    partnerships=[{'label':label,'count':n,'percent':round((n/partner_max)*100,1) if n else 0} for _,label,n in partner_raw]
 
-    approved_entries = TaepQuarterEntry.objects.filter(report__status='APPROVED', report__budget_year=year)
-    if not is_manager(request.user):
-        approved_entries = approved_entries.filter(report__unit=unit_for(request.user))
-
-    for indicator in allinds.filter(order__in=chosen).order_by('order'):
-        quarters = []
-        for q in range(1, 5):
-            vals = {code: Decimal('0') for code, _ in dashboard_units}
-            target = Decimal('0')
-            for entry in approved_entries.filter(indicator=indicator, quarter=q):
-                target += entry.target or 0
-                for code, _label in dashboard_units:
-                    vals[code] += getattr(entry, UNIT_FIELDS[code]) or 0
-            quarters.append({'q': q, 'target': target, 'vals': vals, 'total': sum(vals.values())})
-        tables.append({'indicator': indicator, 'quarters': quarters})
-
-    latest_candidates = [
-        TaepReport.objects.aggregate(x=Max('updated_at'))['x'],
-        QparReport.objects.aggregate(x=Max('updated_at'))['x'],
-        Partnership.objects.aggregate(x=Max('updated_at'))['x'],
-        ExtensionPPA.objects.aggregate(x=Max('updated_at'))['x'],
-    ]
-    latest = max([x for x in latest_candidates if x], default=None)
-
-    return render(request, 'dashboard/dashboard.html', {
-        'active_page': 'dashboard',
-        'status_table': status,
-        'chart_values': chart_values,
-        'chart_segments': chart_segments,
-        'chart_sum': chart_sum,
-        'counts': counts,
-        'personnel_chart': personnel_chart,
-        'personnel_ticks': personnel_ticks,
-        'partnership_counts': partnership_counts,
-        'partnership_chart': partnership_chart,
-        'taep_tables': tables,
-        'dashboard_units': dashboard_units,
-        'all_indicators': allinds,
-        'chosen': chosen,
-        'year': year,
-        'latest_update': latest,
-        'end_user_view': not is_manager(request.user),
+    counts={'programs':programs.count(),'projects':projects.count(),'activities':activities.count(),'active':status_projects['ongoing'],'drafts':ppas.filter(workflow_status=PPA.DRAFT).count()}
+    termination_due=sum(1 for x in projects if x.termination_eligible)
+    impact_due=sum(1 for x in projects if x.impact_assessment_eligible and x.impact_assessments.count()<2)
+    indicators=list(ExtensionIndicator.objects.filter(active=True,order__lte=4))
+    taep=[]
+    for ind in indicators:
+        vals=[]
+        units=Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE)
+        if role==UserProfile.COORDINATOR:
+            prof=get_profile(request.user); units=units.filter(pk=prof.unit_id) if prof and prof.unit_id else units.none()
+        for u in units:
+            v=QparIndicatorValue.objects.filter(submission__unit=u,submission__year=today.year,submission__quarter=q,submission__status=QparSubmission.SAVED,indicator=ind).aggregate(x=Sum('accomplishment'))['x'] or 0
+            vals.append((u,v))
+        taep.append((ind,vals,sum((v for _,v in vals),Decimal('0'))))
+    forecast=forecast_projects(today.year) if role in (UserProfile.ME_HEAD,UserProfile.ADMIN_STAFF,UserProfile.DIRECTOR) else []
+    return render(request,'dashboard/dashboard.html',{
+        'counts':counts,'termination_due':termination_due,'impact_due':impact_due,'taep':taep,'quarter':q,'year':today.year,'forecast':forecast[:6],
+        'status_programs':status_programs,'status_projects':status_projects,'summary_counts':summary_counts,'summary_total':summary_total,'summary_gradient':summary_gradient,
+        'assessment_counts':assessment_counts,'board_counts':board_counts,'partnerships':partnerships,
     })
 
+@login_required
+def ppa_list(request):
+    require_roles(request.user,UserProfile.COORDINATOR)
+    rows=unit_scope(request.user,PPA.objects.all()).select_related('unit','umbrella_program')
+    return render(request,'dashboard/ppa_list.html',{'rows':rows})
+
+def _unit_for_post(request, key='unit'):
+    if get_role(request.user)==UserProfile.COORDINATOR:
+        p=get_profile(request.user)
+        if not p or not p.unit: raise ValidationError('Your account has no assigned school/campus.')
+        return p.unit
+    uid=request.POST.get(key) or request.GET.get(key)
+    return get_object_or_404(Unit,pk=uid) if uid else None
+
+def _assign_ppa_fields(obj, data, prefix=''):
+    def g(name,default=''): return data.get(prefix+name,default)
+    obj.notice_to_proceed_no=g('notice_to_proceed_no')
+    obj.special_order_no=g('special_order_no')
+    obj.title=g('title').strip()
+    obj.proponents=g('proponents')
+    obj.partner_category=g('partner_category')
+    obj.partner_name=g('partner_name')
+    obj.with_moa_mou=parse_bool(g('with_moa_mou'))
+    obj.board_confirmed=parse_bool(g('board_confirmed'))
+    obj.board_resolution_no=g('board_resolution_no')
+    obj.board_resolution_date=g('board_resolution_date') or None
+    obj.leader_name=g('leader_name'); obj.leader_position=g('leader_position'); obj.leader_contact=g('leader_contact')
+    obj.assistant_name=g('assistant_name'); obj.assistant_position=g('assistant_position'); obj.assistant_contact=g('assistant_contact')
+    obj.members=g('members'); obj.clientele=g('clientele'); obj.target_area=g('target_area')
+    obj.start_date=g('start_date') or None; obj.end_date=g('end_date') or None
+    obj.project_cost=dec(g('project_cost')); obj.funding_source=g('funding_source'); obj.urdea=g('urdea'); obj.sdgs=g('sdgs')
+    return obj
+
+def _save_activities(project, data, prefix='', require_three=True):
+    titles=data.getlist(prefix+'activity_title[]')
+    valid=0
+    for i,title in enumerate(titles):
+        if not title.strip(): continue
+        valid+=1
+        def item(name):
+            arr=data.getlist(prefix+name+'[]'); return arr[i] if i<len(arr) else ''
+        Activity.objects.create(project=project,title=title.strip(),date=item('activity_date') or None,time=item('activity_time') or None,venue=item('activity_venue'),activity_leader=item('activity_leader'),topics=item('activity_topics'),objectives=item('activity_objectives'),learning_outcomes=item('activity_outcomes'),budget=dec(item('activity_budget')))
+    if require_three and valid<3: raise ValidationError('Every project must have at least 3 activities.')
 
 @login_required
-def taep_list(request):
-    reports_qs = TaepReport.objects.filter(owner=request.user)
-    return render(request, 'dashboard/taep_list.html', {'active_page': 'taep', 'reports': reports_qs})
-
-
-@login_required
-def taep_add(request):
-    unit = '' if is_director(request.user) else unit_for(request.user)
-    if not is_director(request.user) and not unit:
-        messages.error(request, 'Your account has no assigned school/campus.')
-        return redirect('taep_list')
-
-    if request.method == 'POST':
+def ppa_add_project(request):
+    require_roles(request.user,UserProfile.COORDINATOR)
+    unit=_unit_for_post(request) if request.method=='POST' else (get_profile(request.user).unit if get_role(request.user)==UserProfile.COORDINATOR and get_profile(request.user) else None)
+    programs=unit_scope(request.user,PPA.objects.filter(ppa_type=PPA.PROGRAM,workflow_status=PPA.SAVED))
+    if request.method=='POST':
+        action=request.POST.get('action','save')
         try:
-            year = int(request.POST.get('budget_year') or timezone.localdate().year)
-        except ValueError:
-            messages.error(request, 'Budget Year must be a valid year.')
-            return redirect('taep_add')
-        if TaepReport.objects.filter(budget_year=year, unit=unit).exists():
-            messages.error(request, 'A TAEP report already exists for that Budget Year and unit.')
-            return redirect('taep_list')
+            with transaction.atomic():
+                obj=PPA(created_by=request.user,unit=_unit_for_post(request),ppa_type=PPA.PROJECT,workflow_status=PPA.DRAFT if action=='draft' else PPA.SAVED)
+                _assign_ppa_fields(obj,request.POST)
+                umb=request.POST.get('umbrella_program')
+                if umb: obj.umbrella_program=unit_scope(request.user,PPA.objects.filter(ppa_type=PPA.PROGRAM)).get(pk=umb)
+                if action!='draft' and (not obj.notice_to_proceed_no or not obj.special_order_no): raise ValidationError('Notice to Proceed No. and Special Order No. are required before final Save.')
+                obj.full_clean(); obj.save(); _save_activities(obj,request.POST,require_three=(action!='draft'))
+                log(request.user,'Created project',obj.title)
+            messages.success(request,'Project saved.' if action!='draft' else 'Project saved as draft.')
+            return redirect('ppa_list')
+        except Exception as e: messages.error(request,str(e))
+    return render(request,'dashboard/ppa_form.html',{'mode':'project','programs':programs,'units':Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE),'auto_unit':unit})
 
-        report = TaepReport.objects.create(budget_year=year, owner=request.user, unit=unit, status='DRAFT')
+@login_required
+def ppa_add_program(request):
+    require_roles(request.user,UserProfile.COORDINATOR)
+    unit=(get_profile(request.user).unit if get_role(request.user)==UserProfile.COORDINATOR and get_profile(request.user) else None)
+    if request.method=='POST':
+        action=request.POST.get('action','save')
         try:
-            save_taep(request, report)
-        except Exception as exc:
-            report.delete()
-            messages.error(request, f'Could not save report: {exc}')
-            return redirect('taep_add')
-
-        if request.POST.get('action') == 'submit':
-            report.submitted_at = timezone.now()
-            if is_director(request.user):
-                report.status = 'APPROVED'
-                report.approved_at = timezone.now()
-                log(request.user, 'Created approved TAEP', str(report))
-            else:
-                report.status = 'PENDING'
-                log(request.user, 'Submitted TAEP', str(report))
-            report.save()
-        else:
-            log(request.user, 'Saved TAEP draft', str(report))
-        return redirect('taep_list')
-
-    rows, units, director_mode = taep_rows(None, request.user)
-    return render(request, 'dashboard/taep_form.html', {
-        'active_page': 'taep', 'report': None, 'rows': rows, 'units': units,
-        'director_mode': director_mode, 'default_year': timezone.localdate().year,
-        'current_quarter': current_quarter(),
-    })
-
+            with transaction.atomic():
+                program=PPA(created_by=request.user,unit=_unit_for_post(request),ppa_type=PPA.PROGRAM,workflow_status=PPA.DRAFT if action=='draft' else PPA.SAVED)
+                _assign_ppa_fields(program,request.POST)
+                if action!='draft' and (not program.notice_to_proceed_no or not program.special_order_no): raise ValidationError('Program Notice to Proceed No. and Special Order No. are required before final Save.')
+                program.full_clean(); program.save()
+                project_indexes=[x for x in request.POST.getlist('project_index[]') if str(x).isdigit()]
+                if action!='draft' and not project_indexes: raise ValidationError('Add at least one Project under the Program.')
+                for idx in project_indexes:
+                    prefix=f'project_{idx}_'
+                    title=request.POST.get(prefix+'title','').strip()
+                    if not title: continue
+                    pr=PPA(created_by=request.user,unit=program.unit,ppa_type=PPA.PROJECT,umbrella_program=program,workflow_status=program.workflow_status)
+                    _assign_ppa_fields(pr,request.POST,prefix)
+                    if action!='draft' and (not pr.notice_to_proceed_no or not pr.special_order_no): raise ValidationError(f'Project “{title}” needs Notice to Proceed No. and Special Order No.')
+                    pr.full_clean(); pr.save(); _save_activities(pr,request.POST,prefix=prefix,require_three=(action!='draft'))
+                log(request.user,'Created program with nested projects',program.title)
+            messages.success(request,'Program, projects, and activities saved.' if action!='draft' else 'Program workflow saved as draft.')
+            return redirect('ppa_list')
+        except Exception as e: messages.error(request,str(e))
+    return render(request,'dashboard/ppa_form.html',{'mode':'program','units':Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE),'auto_unit':unit})
 
 @login_required
-def taep_edit(request, pk):
-    report = get_object_or_404(TaepReport, pk=pk)
-    if report.owner_id != request.user.id:
-        return HttpResponseForbidden('Only the creator can edit this report.')
-    if report.status not in ('DRAFT', 'RETURNED'):
-        return redirect('taep_view', pk=pk)
+def ppa_detail(request,pk):
+    obj=get_object_or_404(unit_scope(request.user,PPA.objects.all()).select_related('unit','umbrella_program'),pk=pk)
+    internal=obj.impact_assessments.filter(assessment_type=ImpactAssessment.INTERNAL).first(); external=obj.impact_assessments.filter(assessment_type=ImpactAssessment.EXTERNAL).first()
+    return render(request,'dashboard/ppa_detail.html',{'obj':obj,'internal':internal,'external':external})
 
-    if request.method == 'POST':
+@login_required
+def ppa_lifecycle(request,pk):
+    require_roles(request.user,UserProfile.COORDINATOR)
+    obj=get_object_or_404(unit_scope(request.user,PPA.objects.filter(ppa_type=PPA.PROJECT)),pk=pk)
+    if request.method=='POST':
         try:
-            year = int(request.POST.get('budget_year') or report.budget_year)
-            if TaepReport.objects.exclude(pk=report.pk).filter(budget_year=year, unit=report.unit).exists():
-                messages.error(request, 'Another report already uses that Budget Year.')
-                return redirect('taep_edit', pk=pk)
-            report.budget_year = year
-            save_taep(request, report)
-        except Exception as exc:
-            messages.error(request, f'Could not save report: {exc}')
-            return redirect('taep_edit', pk=pk)
-
-        if request.POST.get('action') == 'submit':
-            report.submitted_at = timezone.now()
-            if is_director(request.user):
-                report.status = 'APPROVED'
-                report.approved_at = timezone.now()
-                log(request.user, 'Updated approved TAEP', str(report))
-            else:
-                report.status = 'PENDING'
-                log(request.user, 'Submitted TAEP', str(report))
-        else:
-            report.status = 'DRAFT'
-            log(request.user, 'Saved TAEP draft', str(report))
-        report.save()
-        return redirect('taep_list')
-
-    rows, units, director_mode = taep_rows(report, request.user)
-    return render(request, 'dashboard/taep_form.html', {
-        'active_page': 'taep', 'report': report, 'rows': rows, 'units': units,
-        'director_mode': director_mode, 'default_year': report.budget_year,
-        'current_quarter': current_quarter(),
-    })
-
-
-@login_required
-def taep_delete(request, pk):
-    report = get_object_or_404(TaepReport, pk=pk, owner=request.user)
-    if report.status != 'DRAFT':
-        messages.error(request, 'Only drafts can be deleted.')
-        return redirect('taep_list')
-    if request.method == 'POST':
-        label = str(report)
-        report.delete()
-        log(request.user, 'Deleted TAEP draft', label)
-    return redirect('taep_list')
-
-
-@login_required
-def taep_view(request, pk, review=False):
-    report = get_object_or_404(TaepReport, pk=pk)
-    if review:
-        if not is_manager(request.user):
-            return HttpResponseForbidden()
-    elif report.owner_id != request.user.id:
-        return HttpResponseForbidden()
-    rows, units, director_mode = taep_rows(report, request.user if report.owner_id == request.user.id else report.owner)
-    return render(request, 'dashboard/taep_view.html', {
-        'active_page': 'reports' if review else 'taep', 'report': report,
-        'rows': rows, 'units': units, 'review_mode': review, 'director_mode': director_mode,
-    })
-
-
-@login_required
-def taep_review(request, pk):
-    return taep_view(request, pk, True)
-
-
-def next_rev(year, quarter, unit):
-    return (QparReport.objects.filter(year=year, quarter=quarter, unit=unit).aggregate(x=Max('revision_no'))['x'] or 0) + 1
-
-
-def save_qpar(request, report):
-    report.entries.all().delete()
-    units = UNITS if report.unit == '' else [(report.unit, dict(UNITS).get(report.unit, report.unit))]
-    for idx, name in enumerate(request.POST.getlist('indicator')):
-        name = name.strip()
-        if not name:
-            continue
-        entry = QparEntry(report=report, indicator=name, target=parse_number(request.POST.get(f'target_{idx}'), False), remarks=request.POST.get(f'remarks_{idx}', '').strip())
-        for code, _label in units:
-            setattr(entry, UNIT_FIELDS[code], parse_number(request.POST.get(f'value_{idx}_{code}'), False))
-        uploaded = request.FILES.get(f'mov_{idx}')
-        if uploaded:
-            entry.mov_pdf = uploaded
-        entry.full_clean()
-        entry.save()
-
+            if request.POST.get('termination_date'):
+                if not obj.termination_eligible and not obj.termination_date: raise ValidationError('Termination is locked until one year after the End Date with no completed accomplishment.')
+                obj.termination_date=request.POST.get('termination_date'); obj.full_clean(); obj.save()
+            if obj.impact_assessment_eligible:
+                for typ,prefix in [(ImpactAssessment.INTERNAL,'internal_'),(ImpactAssessment.EXTERNAL,'external_')]:
+                    ass,_=ImpactAssessment.objects.get_or_create(project=obj,assessment_type=typ)
+                    ass.date=request.POST.get(prefix+'date') or None; ass.evaluations=request.POST.get(prefix+'evaluations',''); ass.lead=request.POST.get(prefix+'lead',''); ass.members=request.POST.get(prefix+'members',''); ass.save()
+            log(request.user,'Updated lifecycle',obj.title); messages.success(request,'Lifecycle information saved.'); return redirect('ppa_detail',pk=pk)
+        except Exception as e: messages.error(request,str(e))
+    internal=obj.impact_assessments.filter(assessment_type=ImpactAssessment.INTERNAL).first(); external=obj.impact_assessments.filter(assessment_type=ImpactAssessment.EXTERNAL).first()
+    return render(request,'dashboard/ppa_lifecycle.html',{'obj':obj,'internal':internal,'external':external})
 
 @login_required
 def qpar_list(request):
-    reports_qs = QparReport.objects.filter(owner=request.user)
-    return render(request, 'dashboard/qpar_list.html', {'active_page': 'qpar', 'reports': reports_qs})
-
+    require_roles(request.user,UserProfile.COORDINATOR,UserProfile.ADMIN_STAFF)
+    qs=QparSubmission.objects.select_related('unit','created_by')
+    if get_role(request.user)==UserProfile.COORDINATOR:
+        p=get_profile(request.user); qs=qs.filter(unit=p.unit)
+    return render(request,'dashboard/qpar_list.html',{'rows':qs})
 
 @login_required
-def qpar_add(request):
-    unit = '' if is_director(request.user) else unit_for(request.user)
-    if not is_director(request.user) and not unit:
-        messages.error(request, 'Your account has no assigned school/campus.')
-        return redirect('qpar_list')
-
-    if request.method == 'POST':
+def qpar_edit(request,pk=None):
+    require_roles(request.user,UserProfile.COORDINATOR,UserProfile.ADMIN_STAFF)
+    obj=get_object_or_404(QparSubmission,pk=pk) if pk else None
+    if obj and get_role(request.user)==UserProfile.COORDINATOR and obj.unit_id!=get_profile(request.user).unit_id: raise PermissionDenied
+    if request.method=='POST':
         try:
-            year = int(request.POST.get('year') or timezone.localdate().year)
-            quarter = int(request.POST.get('quarter') or 1)
-            if not is_director(request.user) and quarter > current_quarter() and year >= timezone.localdate().year:
-                raise ValueError('You cannot submit a future quarter.')
-            report = QparReport.objects.create(
-                year=year, quarter=quarter, revision_no=next_rev(year, quarter, unit), owner=request.user,
-                unit=unit, title=request.POST.get('title', '').strip(), status='DRAFT'
-            )
-            save_qpar(request, report)
-        except Exception as exc:
-            if 'report' in locals() and report.pk:
-                report.delete()
-            messages.error(request, f'Could not save QPAR: {exc}')
-            return redirect('qpar_add')
-
-        if request.POST.get('action') == 'submit':
-            report.submitted_at = timezone.now()
-            if is_director(request.user):
-                report.status = 'APPROVED'
-                report.approved_at = timezone.now()
-                log(request.user, 'Created approved QPAR', str(report))
-            else:
-                report.status = 'PENDING'
-                log(request.user, 'Submitted QPAR', str(report))
-            report.save()
-        else:
-            log(request.user, 'Saved QPAR draft', str(report))
-        return redirect('qpar_list')
-
-    return render(request, 'dashboard/qpar_form.html', {
-        'active_page': 'qpar', 'report': None,
-        'units': UNITS if unit == '' else [(unit, dict(UNITS).get(unit, unit))],
-        'default_year': timezone.localdate().year, 'current_quarter': current_quarter(),
-    })
-
+            unit=_unit_for_post(request)
+            year=int(request.POST.get('year')); quarter=int(request.POST.get('quarter'))
+            if obj is None: obj,_=QparSubmission.objects.get_or_create(unit=unit,year=year,quarter=quarter,defaults={'created_by':request.user})
+            obj.status=QparSubmission.DRAFT if request.POST.get('action')=='draft' else QparSubmission.SAVED; obj.created_by=request.user; obj.save()
+            for ind in ExtensionIndicator.objects.filter(active=True):
+                val,_=QparIndicatorValue.objects.get_or_create(submission=obj,indicator=ind)
+                val.target=dec(request.POST.get(f'target_{ind.pk}')); val.accomplishment=dec(request.POST.get(f'accomplishment_{ind.pk}')); val.remarks=request.POST.get(f'remarks_{ind.pk}',''); val.save()
+            log(request.user,'Saved QPAR input',str(obj)); messages.success(request,'QPAR input saved.'); return redirect('qpar_list')
+        except Exception as e: messages.error(request,str(e))
+    indicators=[]
+    for ind in ExtensionIndicator.objects.filter(active=True):
+        value=obj.values.filter(indicator=ind).first() if obj else None; indicators.append((ind,value))
+    p=get_profile(request.user)
+    return render(request,'dashboard/qpar_form.html',{'obj':obj,'indicators':indicators,'units':Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE),'auto_unit':p.unit if get_role(request.user)==UserProfile.COORDINATOR and p else None})
 
 @login_required
-def qpar_edit(request, pk):
-    report = get_object_or_404(QparReport, pk=pk)
-    if report.owner_id != request.user.id:
-        return HttpResponseForbidden()
-    if report.status not in ('DRAFT', 'RETURNED'):
-        return redirect('qpar_view', pk=pk)
+def taep_report(request):
+    require_roles(request.user,UserProfile.ME_HEAD)
+    year=int(request.GET.get('year') or timezone.localdate().year)
+    tables=[]
+    for ind in ExtensionIndicator.objects.filter(active=True):
+        quarters=[]
+        for q in range(1,5):
+            unitvals=[]
+            for u in Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE):
+                val=QparIndicatorValue.objects.filter(submission__unit=u,submission__year=year,submission__quarter=q,submission__status=QparSubmission.SAVED,indicator=ind).aggregate(x=Sum('accomplishment'))['x'] or 0
+                unitvals.append((u,val))
+            quarters.append((q,unitvals,sum((v for _,v in unitvals),Decimal('0'))))
+        tables.append((ind,quarters))
+    return render(request,'dashboard/taep_report.html',{'tables':tables,'year':year})
 
-    if request.method == 'POST':
+@login_required
+def qmr_list(request):
+    require_roles(request.user,UserProfile.ME_HEAD,UserProfile.ADMIN_STAFF)
+    return render(request,'dashboard/qmr_list.html',{'rows':QuarterlyMonitoringReport.objects.select_related('project__unit','created_by')})
+
+@login_required
+def qmr_edit(request,pk=None):
+    require_roles(request.user,UserProfile.ME_HEAD,UserProfile.ADMIN_STAFF)
+    obj=get_object_or_404(QuarterlyMonitoringReport,pk=pk) if pk else None
+    form=QuarterlyMonitoringReportForm(request.POST or None,instance=obj)
+    form.fields['project'].queryset=PPA.objects.filter(ppa_type=PPA.PROJECT,workflow_status=PPA.SAVED).select_related('unit')
+    if request.method=='POST' and form.is_valid():
+        x=form.save(commit=False); x.created_by=request.user; x.save(); log(request.user,'Saved Quarterly Monitoring Report',x.project.title); messages.success(request,'Quarterly Monitoring Report saved.'); return redirect('qmr_print',pk=x.pk) if request.POST.get('action')=='save_print' else redirect('qmr_list')
+    return render(request,'dashboard/qmr_form.html',{'form':form,'obj':obj,'phases':PHASES})
+
+@login_required
+def qmr_print(request,pk):
+    require_roles(request.user,UserProfile.ME_HEAD,UserProfile.ADMIN_STAFF)
+    obj=get_object_or_404(QuarterlyMonitoringReport.objects.select_related('project__unit'),pk=pk)
+    return render(request,'dashboard/qmr_print.html',{'obj':obj,'phases':PHASES})
+
+@login_required
+def field_visit_list(request):
+    require_roles(request.user,UserProfile.COORDINATOR,UserProfile.ME_HEAD,UserProfile.DIRECTOR)
+    qs=FieldVisitLog.objects.select_related('project__unit','created_by')
+    if get_role(request.user)==UserProfile.COORDINATOR: qs=qs.filter(project__unit=get_profile(request.user).unit)
+    year=request.GET.get('year'); quarter=request.GET.get('quarter'); unit=request.GET.get('unit')
+    if year and str(year).isdigit(): qs=qs.filter(year=year)
+    if quarter and str(quarter).isdigit(): qs=qs.filter(quarter=quarter)
+    if unit and get_role(request.user)!=UserProfile.COORDINATOR: qs=qs.filter(project__unit_id=unit)
+    return render(request,'dashboard/field_visit_list.html',{'rows':qs,'units':Unit.objects.filter(active=True).exclude(unit_type=Unit.OFFICE)})
+
+@login_required
+def field_visit_create(request):
+    require_roles(request.user,UserProfile.COORDINATOR)
+    if request.method=='POST':
         try:
-            report.year = int(request.POST.get('year') or report.year)
-            report.quarter = int(request.POST.get('quarter') or report.quarter)
-            report.title = request.POST.get('title', '').strip()
-            save_qpar(request, report)
-        except Exception as exc:
-            messages.error(request, f'Could not save QPAR: {exc}')
-            return redirect('qpar_edit', pk=pk)
-
-        if request.POST.get('action') == 'submit':
-            report.submitted_at = timezone.now()
-            if is_director(request.user):
-                report.status = 'APPROVED'
-                report.approved_at = timezone.now()
-                log(request.user, 'Updated approved QPAR', str(report))
-            else:
-                report.status = 'PENDING'
-                log(request.user, 'Submitted QPAR', str(report))
-        else:
-            report.status = 'DRAFT'
-            log(request.user, 'Saved QPAR draft', str(report))
-        report.save()
-        return redirect('qpar_list')
-
-    units = UNITS if report.unit == '' else [(report.unit, dict(UNITS).get(report.unit, report.unit))]
-    return render(request, 'dashboard/qpar_form.html', {
-        'active_page': 'qpar', 'report': report, 'units': units, 'default_year': report.year,
-        'current_quarter': current_quarter(),
-    })
-
+            project=get_object_or_404(unit_scope(request.user,PPA.objects.filter(ppa_type=PPA.PROJECT)),pk=request.POST.get('project'))
+            year=int(request.POST.get('year')); quarter=int(request.POST.get('quarter'))
+            with transaction.atomic():
+                logobj=FieldVisitLog.objects.create(project=project,year=year,quarter=quarter,evaluation=request.POST.get('evaluation',''),created_by=request.user)
+                acts=request.POST.getlist('fv_activities[]')
+                for i,a in enumerate(acts):
+                    if not a.strip(): continue
+                    def item(name):
+                        arr=request.POST.getlist(name+'[]'); return arr[i] if i<len(arr) else ''
+                    entry=FieldVisitEntry(log=logobj,objectives=item('fv_objectives'),activities=a,date=item('fv_date') or None,place=item('fv_place'),time=item('fv_time') or None,expected_parameter=item('fv_parameter'),expected_target=item('fv_target'),person_contacted=item('fv_person'),position=item('fv_position'),result=item('fv_result') or 'NOT_CONDUCTED',rescheduled_date=item('fv_rescheduled') or None,remarks=item('fv_remarks'))
+                    entry.full_clean(); entry.save()
+                log(request.user,'Created Work Plan / Field Visit Log',str(logobj))
+            messages.success(request,'Work Plan and Monitoring Log saved.'); return redirect('field_visit_print',pk=logobj.pk) if request.POST.get('action')=='save_print' else redirect('field_visit_list')
+        except Exception as e: messages.error(request,str(e))
+    projects=unit_scope(request.user,PPA.objects.filter(ppa_type=PPA.PROJECT,workflow_status=PPA.SAVED)).select_related('unit')
+    selected=None; preset=[]
+    pid=request.GET.get('project'); year=int(request.GET.get('year') or timezone.localdate().year); quarter=int(request.GET.get('quarter') or ((timezone.localdate().month-1)//3+1))
+    if pid:
+        selected=get_object_or_404(projects,pk=pid)
+        months={1:(1,3),2:(4,6),3:(7,9),4:(10,12)}[quarter]
+        preset=list(selected.activities.filter(date__year=year,date__month__gte=months[0],date__month__lte=months[1]))
+        if not preset: preset=list(selected.activities.all())
+    return render(request,'dashboard/field_visit_form.html',{'projects':projects,'selected':selected,'preset':preset,'year':year,'quarter':quarter})
 
 @login_required
-def qpar_delete(request, pk):
-    report = get_object_or_404(QparReport, pk=pk, owner=request.user)
-    if report.status != 'DRAFT':
-        messages.error(request, 'Only drafts can be deleted.')
-        return redirect('qpar_list')
-    if request.method == 'POST':
-        label = str(report)
-        report.delete()
-        log(request.user, 'Deleted QPAR draft', label)
-    return redirect('qpar_list')
-
+def field_visit_print(request,pk):
+    require_roles(request.user,UserProfile.COORDINATOR,UserProfile.ME_HEAD,UserProfile.DIRECTOR)
+    qs=FieldVisitLog.objects.select_related('project__unit','created_by').prefetch_related('entries')
+    obj=get_object_or_404(qs,pk=pk)
+    if get_role(request.user)==UserProfile.COORDINATOR and obj.project.unit_id!=get_profile(request.user).unit_id: raise PermissionDenied
+    return render(request,'dashboard/field_visit_print.html',{'obj':obj})
 
 @login_required
-def qpar_view(request, pk, review=False):
-    report = get_object_or_404(QparReport, pk=pk)
-    if review:
-        if not is_manager(request.user):
-            return HttpResponseForbidden()
-    elif report.owner_id != request.user.id:
-        return HttpResponseForbidden()
-    return render(request, 'dashboard/qpar_view.html', {
-        'active_page': 'reports' if review else 'qpar', 'report': report, 'review_mode': review,
-        'units': UNITS if report.unit == '' else [(report.unit, dict(UNITS).get(report.unit, report.unit))],
-    })
-
-
-@login_required
-def qpar_review(request, pk):
-    return qpar_view(request, pk, True)
-
-
-@login_required
-def reports(request):
-    if not is_manager(request.user):
-        return HttpResponseForbidden()
-    return render(request, 'dashboard/reports.html', {
-        'active_page': 'reports',
-        'taep': TaepReport.objects.filter(status='PENDING').exclude(owner=request.user),
-        'qpar': QparReport.objects.filter(status='PENDING').exclude(owner=request.user),
-    })
-
-
-@login_required
-def report_action(request, kind, pk, action):
-    if not is_director(request.user):
-        return HttpResponseForbidden()
-    model = TaepReport if kind == 'taep' else QparReport
-    obj = get_object_or_404(model, pk=pk)
-    if request.method == 'POST':
-        if action == 'approve':
-            obj.status = 'APPROVED'
-            obj.approved_at = timezone.now()
-            obj.returned_at = None
-            obj.director_comment = ''
-            title = f'{kind.upper()} approved'
-            msg = f'Your {obj} was approved by the Director.'
-            log(request.user, f'Approved {kind.upper()}', str(obj))
-        elif action == 'return':
-            comment = (request.POST.get('comment') or '').strip()
-            if not comment:
-                messages.error(request, 'A return comment is required.')
-                return redirect('reports')
-            obj.status = 'RETURNED'
-            obj.returned_at = timezone.now()
-            obj.director_comment = comment
-            title = f'{kind.upper()} returned'
-            msg = f'Your {obj} was returned. Comment: {comment}'
-            log(request.user, f'Returned {kind.upper()}', comment)
-        else:
-            return HttpResponseForbidden()
-        obj.save()
-        link = reverse('taep_view', args=[obj.pk]) if kind == 'taep' else reverse('qpar_view', args=[obj.pk])
-        notify(obj.owner, title, msg, link)
-    return redirect('reports')
-
-
-@login_required
-def notifications(request):
-    items = Notification.objects.filter(user=request.user)
-    if request.method == 'POST':
-        items.filter(is_read=False).update(is_read=True)
-        return redirect('notifications')
-    return render(request, 'dashboard/notifications.html', {'active_page': 'notifications', 'notifications': items})
-
-
-@login_required
-def notification_open(request, pk):
-    item = get_object_or_404(Notification, pk=pk, user=request.user)
-    item.is_read = True
-    item.save(update_fields=['is_read'])
-    return redirect(item.link or 'notifications')
-
-
-@login_required
-def pdf_view(request, kind, pk):
-    if kind == 'taep':
-        obj = get_object_or_404(TaepIndicatorMeta, pk=pk)
-    elif kind == 'qpar':
-        obj = get_object_or_404(QparEntry, pk=pk)
-    else:
-        raise Http404()
-    report = obj.report
-    if not is_manager(request.user) and report.owner_id != request.user.id:
-        return HttpResponseForbidden()
-    file_field = obj.mov_pdf
-    if not file_field:
-        raise Http404('No PDF uploaded.')
-    return FileResponse(file_field.open('rb'), content_type='application/pdf', filename=file_field.name.split('/')[-1])
-
-
-@login_required
-def partnerships(request):
-    form = PartnershipForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        obj = form.save(commit=False)
-        obj.created_by = request.user
-        obj.save()
-        log(request.user, 'Added partnership', obj.stakeholder_name)
-        return redirect('partnerships')
-    rows = Partnership.objects.all().order_by('-updated_at') if is_manager(request.user) else Partnership.objects.filter(created_by=request.user).order_by('-updated_at')
-    return render(request, 'dashboard/partnerships.html', {'active_page': 'data', 'rows': rows, 'form': form})
-
-
-@login_required
-def partnership_edit(request, pk):
-    obj = get_object_or_404(Partnership, pk=pk)
-    if not is_manager(request.user) and obj.created_by_id != request.user.id:
-        return HttpResponseForbidden()
-    form = PartnershipForm(request.POST or None, instance=obj)
-    if request.method == 'POST' and form.is_valid():
-        form.save()
-        log(request.user, 'Edited partnership', obj.stakeholder_name)
-        return redirect('partnerships')
-    return render(request, 'dashboard/simple_form.html', {'active_page': 'data', 'title': 'Edit Partnership', 'form': form})
-
-
-@login_required
-def ppas(request):
-    assigned_unit = unit_for(request.user)
-    initial = {'implementing_unit': assigned_unit} if not is_manager(request.user) else None
-    form = ExtensionPPAForm(request.POST or None, initial=initial)
-    if not is_manager(request.user) and 'implementing_unit' in form.fields:
-        form.fields['implementing_unit'].disabled = True
-        form.fields['implementing_unit'].help_text = 'Your account can only encode records for its assigned school/campus.'
-    if request.method == 'POST' and form.is_valid():
-        obj = form.save(commit=False)
-        if not is_manager(request.user):
-            obj.implementing_unit = assigned_unit
-        obj.created_by = request.user
-        obj.save()
-        log(request.user, 'Added extension PPA', obj.title)
-        return redirect('ppas')
-    rows = ExtensionPPA.objects.all().order_by('-updated_at') if is_manager(request.user) else ExtensionPPA.objects.filter(implementing_unit=assigned_unit).order_by('-updated_at')
-    return render(request, 'dashboard/ppas.html', {'active_page': 'data', 'rows': rows, 'form': form})
-
-
-@login_required
-def ppa_edit(request, pk):
-    obj = get_object_or_404(ExtensionPPA, pk=pk)
-    assigned_unit = unit_for(request.user)
-    if not is_manager(request.user) and obj.implementing_unit != assigned_unit:
-        return HttpResponseForbidden()
-    form = ExtensionPPAForm(request.POST or None, instance=obj)
-    if not is_manager(request.user) and 'implementing_unit' in form.fields:
-        form.fields['implementing_unit'].disabled = True
-    if request.method == 'POST' and form.is_valid():
-        edited = form.save(commit=False)
-        if not is_manager(request.user):
-            edited.implementing_unit = assigned_unit
-        edited.save()
-        log(request.user, 'Edited extension PPA', obj.title)
-        return redirect('ppas')
-    return render(request, 'dashboard/simple_form.html', {'active_page': 'data', 'title': 'Edit Extension Program / Project / Activity', 'form': form})
-
+def analytics(request):
+    require_roles(request.user,UserProfile.ADMIN_STAFF,UserProfile.DIRECTOR,UserProfile.ME_HEAD)
+    year=int(request.GET.get('year') or timezone.localdate().year)
+    return render(request,'dashboard/analytics.html',{'forecast':forecast_projects(year),'year':year})
 
 @login_required
 def manage_users(request):
-    if not is_director(request.user):
-        return HttpResponseForbidden()
-    form = UserCreateForm(request.POST or None)
-    if request.method == 'POST' and form.is_valid():
-        rv = form.cleaned_data['role']
-        uv = form.cleaned_data['unit']
-        school = {'SAAD', 'SAS', 'SAME', 'SOT', 'SOE', 'SOED'}
-        campus = {'BURAUEN', 'CARIGARA', 'DULAG', 'ORMOC', 'TANAUAN'}
-        if rv == 'SCHOOL' and uv not in school:
-            form.add_error('unit', 'Choose one of the six schools.')
-        elif rv == 'CAMPUS' and uv not in campus:
-            form.add_error('unit', 'Choose one of the five campuses.')
-        elif rv == 'ADMIN' and uv:
-            form.add_error('unit', 'Admin Staff should not be assigned to a school/campus.')
-        else:
-            user = User.objects.create_user(
-                username=form.cleaned_data['username'], password=form.cleaned_data['password'], email=form.cleaned_data['email'],
-                first_name=form.cleaned_data['first_name'], last_name=form.cleaned_data['last_name']
-            )
-            UserProfile.objects.create(user=user, role=rv, unit=uv)
-            log(request.user, 'Created user', user.username)
-            return redirect('manage_users')
-    users = User.objects.filter(is_superuser=False).select_related('profile').order_by('username')
-    return render(request, 'dashboard/manage_users.html', {'active_page': 'admin', 'users': users, 'form': form})
-
-
-@login_required
-def user_edit(request, pk):
-    if not is_director(request.user):
-        return HttpResponseForbidden()
-    user = get_object_or_404(User, pk=pk, is_superuser=False)
-    profile, _ = UserProfile.objects.get_or_create(user=user)
-    form = UserEditForm(request.POST or None, initial={
-        'first_name': user.first_name, 'last_name': user.last_name, 'email': user.email,
-        'role': profile.role, 'unit': profile.unit, 'is_active': user.is_active,
-    })
-    if request.method == 'POST' and form.is_valid():
-        user.first_name = form.cleaned_data['first_name']
-        user.last_name = form.cleaned_data['last_name']
-        user.email = form.cleaned_data['email']
-        user.is_active = form.cleaned_data['is_active']
-        user.save()
-        profile.role = form.cleaned_data['role']
-        profile.unit = form.cleaned_data['unit']
-        profile.save()
-        log(request.user, 'Edited user', user.username)
-        return redirect('manage_users')
-    return render(request, 'dashboard/simple_form.html', {'active_page': 'admin', 'title': f'Edit User — {user.username}', 'form': form})
-
+    require_roles(request.user,UserProfile.ME_HEAD)
+    if request.method=='POST':
+        form=UserManageForm(request.POST)
+        if form.is_valid():
+            cd=form.cleaned_data; username=cd['username']
+            if User.objects.filter(username=username).exists(): messages.error(request,'Username already exists.')
+            else:
+                u=User.objects.create_user(username=username,password=cd['password'] or 'ChangeMe123!',first_name=cd['first_name'],last_name=cd['last_name'],email=cd['email'],is_active=cd['is_active'])
+                role=cd['role']; u.is_superuser=(role==UserProfile.ME_HEAD); u.is_staff=u.is_superuser; u.save(); UserProfile.objects.create(user=u,role=role,unit=cd['unit'] if role==UserProfile.COORDINATOR else None); log(request.user,'Created user',username); messages.success(request,'User created.'); return redirect('manage_users')
+    else: form=UserManageForm()
+    return render(request,'dashboard/manage_users.html',{'form':form,'users':User.objects.exclude(pk=request.user.pk).order_by('username')})
 
 @login_required
 def activity_logs(request):
-    if not is_director(request.user):
-        return HttpResponseForbidden()
-    return render(request, 'dashboard/activity_logs.html', {'active_page': 'admin', 'logs': ActivityLog.objects.select_related('actor')[:500]})
+    require_roles(request.user,UserProfile.ME_HEAD)
+    return render(request,'dashboard/activity_logs.html',{'logs':ActivityLog.objects.select_related('actor')[:500]})

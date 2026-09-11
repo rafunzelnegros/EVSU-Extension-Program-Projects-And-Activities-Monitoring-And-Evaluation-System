@@ -1,56 +1,90 @@
-{% load static %}<!doctype html>
+{% load static %}
+<!doctype html>
 <html lang="en">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="theme-color" content="#8b1535">
   <title>{% block title %}EVSU Extension Monitoring System{% endblock %}</title>
-  <link rel="stylesheet" href="{% static 'dashboard/css/app.css' %}">
+  <link rel="stylesheet" href="{% static 'dashboard/css/app.v4.css' %}">
+  <style>
+    /* Small fallback shell so the page remains branded even if static assets are slow. */
+    html,body{margin:0} .topbar{background:#fff;color:#151515;border-bottom:1px solid #e9e1dc}.topbar a{color:#151515;text-decoration:none}
+    .topbar-inner{min-height:74px;padding:10px 22px;display:flex;align-items:center;gap:18px}.brand{display:flex;align-items:center;gap:10px}.brand-logo{width:48px;height:48px;object-fit:contain}.brand-copy b,.brand-copy small{display:block}.main-nav{margin-left:auto;display:flex;align-items:center;gap:4px}.main-nav .nav-link{color:#141414;text-decoration:none;padding:10px 10px;border-radius:9px;font-weight:700}.main-nav .nav-link.active{background:#f5e9ec;color:#8b1535}.logout{color:#8b1535;background:transparent;border:0;font-weight:800}
+  </style>
 </head>
 <body>
-<header class="topbar">
-  <a class="brand" href="{% url 'dashboard' %}">
-    <img class="seal logo-img" src="{% static 'dashboard/img/evsu-logo.png' %}" alt="EVSU logo">
-    <span><b>EASTERN VISAYAS STATE UNIVERSITY</b><small>Extension Monitoring System</small></span>
-  </a>
-
-  <nav class="mainnav">
-    <a class="{% if active_page == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
-    <a class="{% if active_page == 'taep' %}active{% endif %}" href="{% url 'taep_list' %}">Quarterly Physical Report of Operation (TAEP)</a>
-    <a class="{% if active_page == 'qpar' %}active{% endif %}" href="{% url 'qpar_list' %}">Quarterly Performance Accomplishment Report (QPAR)</a>
-
-    {% if current_role == 'DIRECTOR' or current_role == 'ADMIN' %}
-      <a class="{% if active_page == 'reports' %}active{% endif %}" href="{% url 'reports' %}">Reports{% if pending_reports_count %}<i class="badge">{{ pending_reports_count }}</i>{% endif %}</a>
-    {% endif %}
-
-    <span class="dd">
-      <button type="button" data-menu="data">Data Entry ▾</button>
-      <span id="data" class="menu">
-        <a href="{% url 'ppas' %}">Extension Programs / Projects / Activities</a>
-        <a href="{% url 'partnerships' %}">Partnerships, MOA/MOU</a>
+<header class="topbar" id="siteHeader">
+  <div class="topbar-inner">
+    <a class="brand" href="{% url 'dashboard' %}" aria-label="EVSU Extension Monitoring home">
+      <img class="brand-logo" src="{% static 'dashboard/img/evsu_logo.png' %}" alt="Eastern Visayas State University seal">
+      <span class="brand-copy">
+        <b>EASTERN VISAYAS STATE UNIVERSITY</b>
+        <small>Extension Monitoring System</small>
       </span>
-    </span>
+    </a>
 
-    {% if current_role == 'DIRECTOR' %}
-      <span class="dd">
-        <button type="button" data-menu="admin">Admin ▾</button>
-        <span id="admin" class="menu">
-          <a href="{% url 'manage_users' %}">Manage Users</a>
-          <a href="{% url 'activity_logs' %}">Activity Log</a>
+    <button class="nav-toggle" id="navToggle" type="button" aria-label="Open navigation" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+
+    {% with url_name=request.resolver_match.url_name %}
+    <nav class="main-nav" id="mainNav">
+      <a class="nav-link {% if url_name == 'dashboard' %}active{% endif %}" href="{% url 'dashboard' %}">Dashboard</a>
+
+      {% if current_role == 'COORDINATOR' %}
+        <a class="nav-link {% if url_name == 'ppa_list' or url_name == 'ppa_add_project' or url_name == 'ppa_add_program' or url_name == 'ppa_detail' or url_name == 'ppa_lifecycle' %}active{% endif %}" href="{% url 'ppa_list' %}">Programs, Projects &amp; Activities</a>
+        <a class="nav-link {% if url_name == 'field_visit_list' or url_name == 'field_visit_add' %}active{% endif %}" href="{% url 'field_visit_list' %}">Work Plan &amp; Field Visits</a>
+        <a class="nav-link {% if url_name == 'qpar_list' or url_name == 'qpar_add' or url_name == 'qpar_edit' %}active{% endif %}" href="{% url 'qpar_list' %}">QPAR Input</a>
+      {% endif %}
+
+      {% if current_role == 'ME_HEAD' %}
+        <a class="nav-link {% if url_name == 'qmr_list' or url_name == 'qmr_add' or url_name == 'qmr_edit' %}active{% endif %}" href="{% url 'qmr_list' %}">Quarterly Monitoring</a>
+        <a class="nav-link {% if url_name == 'field_visit_list' or url_name == 'field_visit_add' %}active{% endif %}" href="{% url 'field_visit_list' %}">Work Plan &amp; Field Visits</a>
+        <a class="nav-link {% if url_name == 'taep_report' %}active{% endif %}" href="{% url 'taep_report' %}">TAEP Report</a>
+        <span class="dd {% if url_name == 'manage_users' or url_name == 'activity_logs' or url_name == 'analytics' %}open-state{% endif %}">
+          <button type="button" class="nav-link dd-trigger" data-menu="adminMenu">Admin <span class="chev">⌄</span></button>
+          <span id="adminMenu" class="menu">
+            <a href="{% url 'manage_users' %}">Manage Users</a>
+            <a href="{% url 'activity_logs' %}">Activity Log</a>
+            <a href="{% url 'analytics' %}">Prediction &amp; Analytics</a>
+          </span>
         </span>
-      </span>
-    {% endif %}
+      {% endif %}
 
-    {% if current_role != 'DIRECTOR' and current_role != 'ADMIN' %}
-      <a class="{% if active_page == 'notifications' %}active{% endif %}" href="{% url 'notifications' %}">Notifications{% if unread_notifications_count %}<i class="badge">{{ unread_notifications_count }}</i>{% endif %}</a>
-    {% endif %}
-  </nav>
+      {% if current_role == 'ADMIN_STAFF' %}
+        <a class="nav-link {% if url_name == 'qpar_list' or url_name == 'qpar_add' or url_name == 'qpar_edit' %}active{% endif %}" href="{% url 'qpar_list' %}">QPAR Input</a>
+        <a class="nav-link {% if url_name == 'qmr_list' or url_name == 'qmr_add' or url_name == 'qmr_edit' %}active{% endif %}" href="{% url 'qmr_list' %}">Quarterly Monitoring</a>
+        <a class="nav-link {% if url_name == 'analytics' %}active{% endif %}" href="{% url 'analytics' %}">Prediction &amp; Analytics</a>
+      {% endif %}
 
-  <div class="accountbox"><form method="post" action="{% url 'logout' %}">{% csrf_token %}<button class="logout">Logout</button></form></div>
+      {% if current_role == 'DIRECTOR' %}
+        <a class="nav-link {% if url_name == 'field_visit_list' %}active{% endif %}" href="{% url 'field_visit_list' %}">Work Plan &amp; Field Visits</a>
+        <a class="nav-link {% if url_name == 'analytics' %}active{% endif %}" href="{% url 'analytics' %}">Prediction &amp; Analytics</a>
+      {% endif %}
+
+      <span class="nav-divider" aria-hidden="true"></span>
+      <form method="post" action="{% url 'logout' %}" class="logout-form">{% csrf_token %}<button class="logout" type="submit">Logout</button></form>
+    </nav>
+    {% endwith %}
+  </div>
 </header>
 
-{% if messages %}<div class="messages">{% for m in messages %}<div class="{{ m.tags }}">{{ m }}</div>{% endfor %}</div>{% endif %}
+{% if messages %}
+<div class="messages" aria-live="polite">
+  {% for m in messages %}<div class="{% if m.tags %}{{m.tags}}{% endif %}">{{m}}</div>{% endfor %}
+</div>
+{% endif %}
+
 {% block hero %}{% endblock %}
-<main>{% block content %}{% endblock %}</main>
-<script src="{% static 'dashboard/js/app.js' %}"></script>
+<main class="site-main">{% block content %}{% endblock %}</main>
+
+<footer class="site-footer">
+  <span>Eastern Visayas State University · Extension Services</span>
+  <span>Monitoring &amp; Evaluation System</span>
+</footer>
+
+<script src="{% static 'dashboard/js/app.v3.js' %}"></script>
 {% block scripts %}{% endblock %}
-</body></html>
+</body>
+</html>

@@ -1,82 +1,86 @@
-# EVSU Extension Monitoring System — V7 Clean Rebuild
+# EVSU Extension PPAs Monitoring and Evaluation System — Sept. 11, 2026 Revision
 
-This package is a fresh rebuild intended to replace the patched V3–V6 development database. The configured MySQL database name is exactly `evsu_extension`.
+This build is a reconstructed revision of the existing Django/Bootstrap system based on the recoverable August source files plus the Sept. 11 workflow changes and the photographed official print forms.
 
-## IMPORTANT: Fresh database
-If your current `evsu_extension` database contains only test data and you already decided to delete it, open phpMyAdmin → SQL and run the included `reset_database.sql`, or run:
+## Implemented in this revision
 
-```sql
-DROP DATABASE IF EXISTS evsu_extension;
-CREATE DATABASE evsu_extension CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
-```
+- Role-based navigation for **M&E Head**, **Coordinator**, **Admin Staff**, and **Director**.
+- PPA hierarchy: **Program → Projects → Activities**.
+  - **Add Program** is one workflow that saves the Program, nested Projects, and each Project's Activities.
+  - **Add Project** saves a Project with a minimum of 3 Activities on final Save.
+- Project Design fields A–L requested in the Sept. 11 revision, including approval references, unit auto-assignment for coordinators, partner/MOA/board conditional data, management team, duration, funding, URDEA, SDGs, activities, time-gated termination, and time-gated internal/external impact assessment.
+- Work Plan and Monitoring Log for Field Visits with quarter/year filtering, project activity prefill, results, rescheduling, remarks, evaluation, and official-style print output.
+- Quarterly Monitoring Report for M&E Heads and **provisionally Admin Staff**, with Phase 1–7, status, evaluation, and official-style print output.
+- QPAR Input for Coordinators and Admin Staff. The first 4 saved indicators are automatically reflected on dashboards as the TAEP summary.
+- M&E TAEP consolidated report across all 11 schools/campuses.
+- Dashboard summaries derived from PPA/QPAR records.
+- Prediction/Analytics page using a lightweight least-squares trend over quarterly project starts (no external ML dependency).
+- User management and activity log for M&E Heads.
+- Seed command for 11 units and the 24 Extension Indicators.
 
-Do not manually create tables. Django will create them.
+## Important implementation choice
 
-## First-run setup in VS Code PowerShell
+The exact latest project ZIP was not present in the active conversation, so this is a **reconstructed working revision**, not a byte-for-byte patch of the user's latest local folder. The visual language intentionally follows the recovered dark-green EVSU interface. Before replacing an existing database, review/migrate current data.
+
+## Setup
 
 ```powershell
-cd path\to\evsu_extension_v7
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1
+.venv\Scripts\Activate.ps1
 pip install -r requirements.txt
-python manage.py makemigrations
+python manage.py makemigrations dashboard
 python manage.py migrate
-python manage.py seed_indicators
-python manage.py createsuperuser
+python manage.py seed_system --demo-users
 python manage.py runserver
 ```
 
-If your XAMPP database `root` user has a password, edit `evsu_extension/settings.py` and put it in `DATABASES['default']['PASSWORD']` before migrating.
+Open `http://127.0.0.1:8000/`.
 
-Optional test accounts:
+Demo password (only if `--demo-users` was used): `ChangeMe123!`. Change immediately.
+
+### If you want a clean set of users
+
+On a COPY/backup of your database only:
 
 ```powershell
-python manage.py seed_demo_accounts
+python manage.py seed_system --reset-users --demo-users
 ```
 
-Temporary password: `ChangeMe123!`
+This deletes all existing Django users in that database before recreating the placeholder role accounts. Do not run this on the only copy of production data.
 
-## Main V7 corrections
-- Director TAEP/QPAR lists show only reports created by the Director. End-user submissions are reviewed under **Reports** instead of being mixed into the Director's personal history.
-- End-user dashboard is scoped to the assigned school/campus.
-- End users do not see Reports or Admin navigation.
-- Header displays the currently logged-in role/school/campus.
-- User notifications are created when the Director approves or returns a report.
-- Draft TAEP/QPAR reports can be deleted by their creator, including Director-created drafts.
-- Partnership form no longer contains Agreement Type. `Board Confirmed` is a checkbox field.
-- PPA Data Entry feeds the Programs/Projects status table/chart, assessment counts, and personnel counts.
-- Dashboard donut is dynamic and reads the same PPA summary counts as the table.
-- TAEP has PDF MOV uploads, automatic totals, whole-number validation for normal indicators, decimal percentage input, and future-quarter locking for end users.
-- QPAR has PDF MOV uploads, integer numeric fields, automatic `(2)`, `(3)` revision naming, creator Edit for Draft/Returned reports, and landscape print styling.
-- Reports View keeps Reports active; Return uses a required comment modal.
-- Print views use spreadsheet-like tables and compact signatory lines.
-- Login uses “Monitoring and Evaluation”.
-- `DATA_UPLOAD_MAX_NUMBER_FIELDS=5000` prevents the Director TAEP form from hitting Django's default 1,000-field limit.
+## MySQL/XAMPP
 
-## UACS codes
-The supplied source material identifies a UACS Code field but does not provide the actual codes for the 24 indicators. V7 therefore does **not invent codes**. After `seed_indicators`, enter official UACS codes through `/django-admin/` → Extension indicators when the Extension Office provides them.
+SQLite is the default so the project can start without database configuration. To use MySQL, set environment variables first:
 
-## PDF / MOV storage
-PDFs work locally immediately under `media/movs/`. See `GOOGLE_DRIVE_SETUP.md` for the optional Drive migration path.
+```powershell
+$env:DB_ENGINE='mysql'
+$env:DB_NAME='evsu_extension'
+$env:DB_USER='root'
+$env:DB_PASSWORD='your_password'
+$env:DB_HOST='127.0.0.1'
+$env:DB_PORT='3306'
+```
 
-## Pre-Oral UI / Workflow Notes
+Then run migrations. If your old MySQL/MariaDB install still gives authentication-plugin errors, fix the server/client configuration before migrating; do not delete the database as a troubleshooting step.
 
-### Replace the EVSU logo
-The project intentionally ships with a placeholder image so you can swap in the official logo without editing HTML.
+## Time-gating rules
 
-1. Prepare the official EVSU logo as a PNG (square image is best).
-2. Rename it exactly to `evsu-logo.png`.
-3. In VS Code open: `dashboard/static/dashboard/img/`.
-4. Replace the existing `evsu-logo.png` file with your official logo.
-5. Restart Django if needed, then use **Ctrl + F5** in the browser to force-refresh static files.
+- **Termination** is enabled after `End Date + 365 days` when there is no completed Field Visit accomplishment and no termination date has already been recorded.
+- **Impact Assessment** becomes enabled after `Date of Termination + 365 days`.
 
-The same file is used in the main header and Sign In page.
+These rules are centralized in `PPA.termination_eligible` and `PPA.impact_assessment_eligible` so they can be changed if the Extension Office confirms a different interpretation.
 
-### UACS codes
-UACS codes are stored centrally in the `ExtensionIndicator` master table. They are **not invented by the system** and should not be repeatedly typed into every report. The Extension Office should provide/verify the official UACS code for each indicator; encode it once in the indicator master record (Django Admin), and TAEP forms/reports reuse it automatically. If no official code has been supplied yet, leave it blank instead of guessing.
+## Provisional item
 
-### Director-created reports
-When the Director presses **Submit Report** on a Director-created TAEP or QPAR, the report is automatically marked **Approved** and remains in the Director's own report history. It does not enter the Reports-for-Review queue. The Reports page is reserved for submissions made by other accounts.
+Quarterly Monitoring Report access currently includes **Admin Staff** as requested in the Sept. 11 change. If this is confirmed wrong, remove `UserProfile.ADMIN_STAFF` from `qmr_list`, `qmr_edit`, and `qmr_print` in `dashboard/views.py`, and remove the Admin Staff nav link in `dashboard/templates/dashboard/base.html`.
 
-### Board Confirmed MOA/MOU dashboard
-The supplied partnership data-entry sheet has no separate Agreement Type field. To avoid inventing a field that is not present in the source sheet, the dashboard recognizes confirmed MOA/MOU from the partnership **Remarks** text. Example remarks: `3-year MOA` or `MOU for renewal`. If the office later provides an official separate MOA/MOU field, this logic can be normalized in the database.
+## Official printable references
+
+See `reference_forms/`. The print templates are browser-print layouts based on these forms, not scans embedded as the final printable document.
+
+## UI restoration update
+This package restores the EVSU institutional visual system across the application: maroon/gold university palette, branded header/login, role-aware active navigation, responsive/mobile navigation, dashboard hero, richer monitoring cards, refined forms/tables, and dynamic add/remove interactions. Backend/data-flow behavior from the September revision is unchanged.
+
+
+## UI / static files note (v3)
+This build uses versioned static assets (`app.v3.css` and `app.v3.js`) and an absolute `/static/` prefix to prevent an older browser-cached stylesheet from being mixed with newer templates. If upgrading over an older extracted copy, replace the whole project folder rather than copying only templates. Restart `python manage.py runserver` after extraction.
